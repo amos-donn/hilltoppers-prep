@@ -2,14 +2,18 @@
    All Canvas calls happen in the browser with the user's own token
    (Authorization: Bearer). The token never leaves this device.
 
-   Most Canvas instances block cross-origin browser calls (CORS), so each
-   request tries Canvas directly first and, when the browser blocks it,
-   transparently retries through an optional CORS proxy (see worker/). */
+   Most Canvas instances block cross-origin browser calls (CORS), so each   request tries Canvas directly first and, when the browser blocks it,
+   transparently retries through the CORS proxy hosted at
+   https://hilltoppers-canvas-proxy.amos-donn.workers.dev.
+   */
 
 (function () {
   "use strict";
 
   var STORAGE_TOKEN = "hiltoppers.canvasToken";
+  /* The CORS proxy is a fixed server-side worker — no user input.
+     Its URL is baked into the worker README so a deploy must match. */
+  var PROXY_BASE = "https://hilltoppers-canvas-proxy.amos-donn.workers.dev";
   var STORAGE_PROXY = "hiltoppers.canvasProxyUrl";
   /* The school's Canvas host is fixed — no user input needed. */
   var DEFAULT_BASE = "https://stjacademy.instructure.com";
@@ -51,15 +55,7 @@
       return;
     }
 
-    var proxy = normalizeBase(els.proxyUrl ? els.proxyUrl.value : "");
-    if (proxy && !/^https:\/\//i.test(proxy)) {
-      setStatus("Proxy URL must start with https://", true);
-      return;
-    }
-
     localStorage.setItem(STORAGE_TOKEN, token);
-    localStorage.setItem(STORAGE_PROXY, proxy);
-    if (els.proxyUrl) els.proxyUrl.value = proxy;
     setStatus("Saved.", false);
     refresh();
   }
@@ -85,7 +81,9 @@
   }
 
   function currentProxy() {
-    return normalizeBase(localStorage.getItem(STORAGE_PROXY) || "");
+    // The proxy URL is fixed: https://hilltoppers-canvas-proxy.amos-donn.workers.dev
+    // Kept from localStorage only for the unlikely case a deploy moves it.
+    return normalizeBase(localStorage.getItem(STORAGE_PROXY) || PROXY_BASE);
   }
 
   /* ---------- Canvas API ---------- */

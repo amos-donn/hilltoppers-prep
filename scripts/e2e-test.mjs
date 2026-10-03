@@ -10,14 +10,13 @@ const window = new JSDOM(`<!doctype html><html><body>
     <button id="settings-toggle" aria-expanded="true" aria-controls="settings"></button>
     <section id="settings" aria-label="Canvas settings">
       <input id="canvas-token" type="password" />
-      <input id="canvas-proxy-url" type="url" />
       <button id="save-settings"></button>
       <span id="settings-status"></span>
     </section>
     <main id="classes"></main>
   </div>
 </body></html>`, {
-  url: "https://amos-donn.github.io/hiltoppers-prep/",
+  url: "https://amos-donn.github.io/hilltoppers-prep/",
   runScripts: "outside-only",
   pretendToBeVisual: true,
 }).window;
@@ -52,10 +51,8 @@ const results = [];
 function assert(cond, msg) {
   results.push({ ok: Boolean(cond), msg });
   if (!cond) console.error("FAIL: " + msg);
-}
-
-window.localStorage.setItem("hiltoppers.canvasToken", "e2e-token");
-window.localStorage.setItem("hiltoppers.canvasProxyUrl", "https://proxy.example");
+}  window.localStorage.setItem("hiltoppers.canvasToken", "e2e-token");
+  window.localStorage.setItem("hiltoppers.canvasProxyUrl", "");
 
 window.eval(readFileSync("script.js", "utf8"));
 // JSDOM fires DOMContentLoaded itself after parsing; do not double-dispatch.
@@ -78,16 +75,19 @@ const direct = calls.filter((c) => c.url.includes("stjacademy.instructure.com"))
 assert(direct.length >= 1, "direct Canvas call attempted first");
 assert(direct.every((c) => c.auth === "Bearer e2e-token"), "direct calls carried the token");
 
-const proxied = calls.filter((c) => c.url.includes("proxy.example"));
+const proxied = calls.filter((c) => c.url.includes("hilltoppers-canvas-proxy.amos-donn.workers.dev"));
 assert(proxied.length >= 2, "proxy fallback used for courses + page fetches");
 assert(proxied.every((c) => c.auth === "Bearer e2e-token"), "proxied calls carried the token");
 assert(
   proxied.some((c) => /url=https%3A%2F%2Fstjacademy\.instructure\.com/.test(c.url)),
   "proxy URL wraps the Canvas URL"
 );
+assert(
+  proxied.every((c) => c.url.includes("hilltoppers-canvas-proxy.amos-donn.workers.dev")),
+  "all proxied calls target the fixed worker URL"
+);
 
-const proxyField = document.getElementById("canvas-proxy-url");
-assert(proxyField && proxyField.value === "https://proxy.example", "proxy field restored from storage");
+
 
 console.log(results.every((r) => r.ok) ? "E2E OK — all assertions passed" : "E2E FAILED");
 if (errors.length) console.log("window errors:\n  " + errors.join("\n  "));
