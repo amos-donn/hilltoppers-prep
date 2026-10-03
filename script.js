@@ -60,6 +60,13 @@
     refresh();
   }
 
+  function errorStatusText(diag) {
+    if (!diag || diag.code < 0) return diag && diag.label ? diag.label : "Could not reach Canvas.";
+    var code = diag.code >= 0 ? "err-" + diag.code : "";
+    var extra = diag.detail ? " (" + diag.detail + ")" : "";
+    return (code ? "[" + code + "] " : "") + diag.label + extra;
+  }
+
   function setStatus(text, isError) {
     els.status.textContent = text;
     els.status.classList.toggle("is-error", Boolean(isError));
@@ -86,15 +93,153 @@
     return normalizeBase(localStorage.getItem(STORAGE_PROXY) || PROXY_BASE);
   }
 
-  /* ---------- Canvas API ---------- */
+  /* ---------- Canvas API (direct first, CORS-proxy fallback) ----------
 
-  /* ---------- Canvas API (direct first, CORS-proxy fallback) ---------- */
+     Every fetch failure is classified into one of 10 buckets so the status bar
+     can say exactly why it failed instead of a generic "Failed to fetch". */
 
-  function toError(res) {
-    if (res.status === 401 || res.status === 403) {
-      return new Error("Canvas rejected the token (HTTP " + res.status + ").");
+  var ERROR_BUCKETS = [
+    /* 0 */[ /^Failed to fetch$/i,
+            /^NetworkError/i,
+            /Load failed/i,
+            /^AbortError/i,
+            /^NS_ERROR/i,
+      ],  /* CORS/network rejection — browser refused the direct call. */
+    /* 1 */[ /certificate/i, /net::err-/, /^ERR_CERT/, /ssl/i, /secure connexion/i,
+            /insecure/i, /privacy/i,
+      ],  /* TLS/certificate problem reaching the target. */
+    /* 2 */[ /^AbortError$/i, /^TimeoutError$/i, /^ECONNRESET$/i, /^EPIPE$/i,
+            /etimedout/i, /timeout/i, /timed out/i, /connection refused/i,
+            /refused/i, /connection timed out/i, /timedout/i,
+      ],  /* Connection reset / timeout / refused. */
+    /* 3 */[ /^TypeError:\s*Failed to fetch$/i,
+            /^TypeError:\s*(NetworkError|Load failed)/i,
+            /^TypeError$/i,
+            /blocked/i, /blocked by/i, / CORS/i,
+      ],  /**
+        *   TypeError with a CORS flavor — normally the browser's opaque
+        *   "Failed to fetch" path, but surfaced through the TypeError branch
+        *   when the runtime exposes a message. */
+    /* 4 */[ /^http:\/\//i, /^file:\/\//i, /^chrome-extension:/i,
+            /^blob:/i, /^data:/i, /^ftp:/i, /not a valid URL/i,
+            /invalid url/i, /URL constructor/i, /malformed/i,
+      ],  /**
+        *   Non-https scheme or malformed target — the fetch target was not
+        *   an https URL (or was unparseable). */
+    /* 5 */[ /^SyntaxError$/i, /unexpected token/i, /JSON at position/i,
+            /json/i, /not json/i, /unexpected end/i,
+      ],  /**
+        *   Response was not JSON — the proxy or Canvas returned HTML/text and
+        *   JSON.parse failed. */
+    /* 6 */[ /^401/i, /^403/i, /unauthorized/i, /forbidden/i, /rejected the token/i,
+      ],  /**
+        *   HTTP 401/403 — token rejected or not authorized. */
+    /* 7 */[ /^404/i, /not found/i, /does not exist/i, /no such/i, /route/i,
+      ],  /**
+        *   HTTP 404 / unknown route — the API path or proxy param was wrong. */
+    /* 8 */[ /^500/i, /^502/i, /^503/i, /^504/i, /internal error/i, /service/i,
+            /temporarily/i, /unavailable/i, /overloaded/i,
+      ],  /**
+        *   5xx / server-side error — Canvas or the proxy is having trouble. */
+    /* 9 */[],
+  ].map(function (patterns) {
+    return patterns.map(function (p) {
+      try { return new RegExp(p.source, p.flags || "i"); } catch (e) {
+        return new RegExp(p.source || p, "i");
+      }
+    });
+  });
+
+  function classifyFetchError(err, targetUrl, proxyUsed) {
+    if (!err) return { code: 9, label: "unknown error (no error object)", detail: "" };
+    var msg = String(err && err.message || err);
+    var name = String(err && err.name || "Error");
+    var str = name + ": " + msg;
+
+    // Most browsers hide the real network reason under a generic name/message.
+    // Surface what we can without inventing details.
+    var detail = (err && err.message) ? msg : "";
+
+    // 1) TypeError / opaque network failures
+    if (err instanceof TypeError || /TypeError/i.test(name)) {
+      for (var i = 0; i < ERROR_BUCKETS[3].length; i++) {
+        if (ERROR_BUCKETS[3][i].test(str)) {
+          return { code: 3, label: "browser blocked the request (TypeError)", detail: detail };
+        }
+      }
+      for (i = 0; i < ERROR_BUCKETS[0].length; i++) {
+        if (ERROR_BUCKETS[0][i].test(str)) {
+          return { code: 0, label: "network/CORS failure (browser refused the call)", detail: detail };
+        }
+      }
+      return { code: 0, label: "TypeError — browser refused the request", detail: detail };
     }
-    return new Error("Canvas responded with HTTP " + res.status + ".");
+
+    // 2) HTTP responses from fetch (response.ok false)
+    if (err && err.status != null) {
+      var status = err.status;
+      if (status === 401 || status === 403) {
+        return { code: 6, label: "Canvas rejected the token (HTTP " + status + ")", detail: detail };
+      }
+      if (status === 404) {
+        return { code: 7, label: "resource not found (HTTP 404) — wrong API path or proxy parameter", detail: detail };
+      }
+      if (status >= 500) {
+        return { code: 8, label: "server error (HTTP " + status + ") — Canvas or proxy is having trouble", detail: detail };
+      }
+      return { code: 8, label: "HTTP error (status " + status + ")", detail: detail };
+    }
+
+    // 3) Syntax/JSON parse failures
+    if (err instanceof SyntaxError || /SyntaxError/i.test(name)) {
+      for (i = 0; i < ERROR_BUCKETS[5].length; i++) {
+        if (ERROR_BUCKETS[5][i].test(str)) {
+          return { code: 5, label: "response was not valid JSON", detail: detail };
+        }
+      }
+      return { code: 5, label: "failed to parse the response as JSON", detail: detail };
+    }
+
+    // 4) Abort/timeout/connection-level errors (match the raw strings the
+    //    browser/runtime may expose, case-insensitively per token).
+    if (/AbortError/i.test(name) ||
+        /timeout/i.test(msg) || /timed out/i.test(msg) ||
+        /etimedout/i.test(msg) || /timedout/i.test(msg) ||
+        /connection timed out/i.test(msg)) {
+      return { code: 2, label: "request timed out or was aborted", detail: detail };
+    }
+    if (/refused/i.test(msg) || /reset/i.test(msg) ||
+        /econnrefused/i.test(msg) || /epipe/i.test(msg) ||
+        /econnreset/i.test(msg) || /reset by peer/i.test(msg)) {
+      return { code: 2, label: "connection was reset or refused", detail: detail };
+    }
+
+    // 5) TLS / certificate errors
+    if (/cert/i.test(str) || /ssl/i.test(str) || /insecure/i.test(str) || /privacy/i.test(str) || /net::err-/i.test(str)) {
+      return { code: 1, label: "TLS/certificate error", detail: detail };
+    }
+
+    // 6) Non-https scheme or malformed URL
+    if (targetUrl) {
+      try {
+        var u = new URL(targetUrl);
+        if (u.protocol !== "https:" && u.protocol !== "http:") {
+          return { code: 4, label: "target is not an https URL (" + u.protocol + ")", detail: targetUrl };
+        }
+      } catch (e) {
+        return { code: 4, label: "target URL is malformed", detail: targetUrl };
+      }
+    }
+    if (/invalid url/i.test(str) || /URL constructor/i.test(str) || /malformed/i.test(str) || /^blob:/i.test(str) || /^data:/i.test(str)) {
+      return { code: 4, label: "target URL is invalid or not HTTPS", detail: detail };
+    }
+
+    // 7) DNS / host not reachable
+    if (/host/i.test(str) || /dns/i.test(str) || /resolve/i.test(str) || /not found/i.test(str) || /unknown/i.test(str)) {
+      return { code: 2, label: "could not reach the host (DNS/connection)", detail: detail };
+    }
+
+    return { code: 9, label: "error (" + name + ")", detail: detail };
   }
 
   function requestJson(url, token, proxyBase) {
@@ -102,25 +247,46 @@
     return fetch(fetchUrl, {
       headers: { Authorization: "Bearer " + token, Accept: "application/json" },
     }).then(function (res) {
-      if (!res.ok) throw toError(res);
+      if (!res.ok) {
+        var httpErr = new Error("HTTP " + res.status);
+        httpErr.status = res.status;
+        throw httpErr;
+      }
       return res.json();
     });
   }
 
-  /* Most Canvas hosts refuse cross-origin browser requests (no CORS
-     headers), which browsers surface as an opaque TypeError. Try the
-     instance directly first; when the browser blocks the call and a
-     proxy is configured, retry through the proxy. */
   function canvasGet(path) {
     var token = currentToken();
     var url = currentBase() + "/api/v1" + path;
     var proxy = currentProxy();
+    var classifier = {
+      code: -1,
+      label: "",
+      source: "",
+      target: url,
+      proxyUsed: false,
+    };
+
+    function setClassifier(err, source) {
+      classifier.code = classifyFetchError(err, classifier.target, classifier.proxyUsed).code;
+      classifier.label = classifyFetchError(err, classifier.target, classifier.proxyUsed).label;
+      classifier.source = source;
+    }
+
     return requestJson(url, token, "").catch(function (err) {
+      classifier.proxyUsed = false;
+      setClassifier(err, "direct");
       var blocked =
         err instanceof TypeError ||
         /Failed to fetch|NetworkError|Load failed/i.test(String(err && err.message));
       if (blocked && proxy) {
-        return requestJson(url, token, proxy);
+        classifier.proxyUsed = true;
+        setClassifier(err, "direct-then-proxy");
+        return requestJson(url, token, proxy).catch(function (proxyErr) {
+          setClassifier(proxyErr, "proxy");
+          throw proxyErr;
+        });
       }
       throw err;
     });
@@ -131,6 +297,7 @@
   function refresh() {
     var token = currentToken();
     els.classes.textContent = "";
+    els.latestDiag = null;
 
     if (!token) {
       els.classes.appendChild(hint("Add your Canvas API token above to load today's plan for each class."));
@@ -141,22 +308,25 @@
 
     canvasGet("/courses?enrollment_state=active&per_page=100")
       .then(function (courses) {
-        setStatus("", false);
         if (!Array.isArray(courses) || courses.length === 0) {
           els.classes.appendChild(hint("No active classes found on this Canvas account."));
+          els.latestDiag = null;
           return;
         }
         renderCourseCards(courses);
       })
       .catch(function (err) {
-        setStatus(err.message || "Could not reach Canvas.", true);
+        var diag = classifyFetchError(err, currentBase() + "/api/v1/courses", false);
+        els.latestDiag = { label: err.message || "Could not reach Canvas.", code: diag.code, detail: diag.detail, target: currentBase() + "/api/v1/courses", proxyUsed: false };
+        setStatus(errorStatusText(diag), true);
         els.classes.textContent = "";
-        els.classes.appendChild(hint(err.message || "Could not reach Canvas."));
+        els.classes.appendChild(hint(err.message || "Could not reach Canvas." + (diag.detail ? " (" + diag.detail + ")" : "")));
       });
   }
 
   function renderCourseCards(courses) {
     els.classes.textContent = "";
+    els.latestDiag = null;
     courses.forEach(function (course) {
       var card = makeCard(course.name || "Untitled class");
       els.classes.appendChild(card.sec);
@@ -165,7 +335,8 @@
           renderPlan(card.body, plan);
         })
         .catch(function (err) {
-          renderState(card.body, err.message || "Could not load this class.", "is-error");
+          var diag = classifyFetchError(err, currentBase() + "/api/v1/courses/" + course.id + "/front_page", false);
+          renderState(card.body, errorStatusText(diag), "is-error");
         });
     });
   }
