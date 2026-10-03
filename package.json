@@ -1,0 +1,12 @@
+{
+  "name": "hiltoppers-prep-topping",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Static topping page for the Hilltoppers extension: today's Canvas plan per class.",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "dev": "node scripts/serve.mjs",
+    "build": "node scripts/build.mjs"
+  }
+}
