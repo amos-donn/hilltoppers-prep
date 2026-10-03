@@ -1,0 +1,8 @@
+name = "hiltoppers-canvas-proxy"
+main = "worker/index.mjs"
+compatibility_date = "2026-09-01"
+
+# Lock the proxy down once you know your origins (Workers → Settings → Variables):
+#   ALLOWED_ORIGINS  = "https://amos-donn.github.io,chrome-extension://<your-extension-id>"
+#   ALLOWED_SUFFIXES = "instructure.com"
+#   ALLOW_INSECURE   = unset (only for local testing)
