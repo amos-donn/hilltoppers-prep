@@ -40,5 +40,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(`hiltoppers-prep topping serving on http://0.0.0.0:${port}`);
+  console.log(`hilltoppers-prep topping serving on http://0.0.0.0:${port}`);
 });

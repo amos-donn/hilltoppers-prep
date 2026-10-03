@@ -32,15 +32,12 @@
           placeholder="Paste your Canvas access token"
         />
 
-        <label for="canvas-proxy-url">CORS proxy URL <span class="optional">(optional)</span></label>
-        <input
-          id="canvas-proxy-url"
-          name="canvas-proxy-url"
-          type="url"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="https://hiltoppers-canvas-proxy.&lt;your-subdomain&gt;.workers.dev"
-        />
+        <div class="cors-footnote">Canvas API calls that fail in the browser are forwarded through
+          <a class="proxy-link" href="https://hilltoppers-canvas-proxy.amos-donn.workers.dev" target="_blank" rel="noopener">
+            hilltoppers-canvas-proxy.amos-donn.workers.dev
+          </a>
+          .
+        </div>
 
         <div class="settings-actions">
           <button id="save-settings" class="primary-btn" type="button">Save &amp; refresh</button>

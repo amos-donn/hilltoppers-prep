@@ -1,4 +1,4 @@
-# Hiltoppers Canvas CORS proxy (Cloudflare Worker)
+# Hilltoppers Canvas CORS proxy (Cloudflare Worker)
 
 Canvas instances generally do **not** send CORS headers to arbitrary origins,
 so browsers block direct API calls from the topping. This Worker is a
@@ -8,13 +8,13 @@ every request.
 
 ## Deploy (dashboard paste — no tooling needed)
 
-1. Cloudflare Dashboard → **Workers & Pages → Create → Worker** (name it e.g. `hiltoppers-canvas-proxy`) → Deploy.
+1. Cloudflare Dashboard → **Workers & Pages → Create → Worker** (name it e.g. `hilltoppers-canvas-proxy`) → Deploy.
 2. **Edit code** → paste the contents of [`index.mjs`](./index.mjs) → Deploy.
 3. Worker → **Settings → Variables & Secrets** → add (after first deploy; see security notes):
    - `ALLOWED_ORIGINS` = `https://amos-donn.github.io` (add `chrome-extension://<your-extension-id>` if the extension ever calls it directly)
    - `ALLOWED_SUFFIXES` = `instructure.com` (add other hosts your school uses, e.g. `myschool.edu`)
    - leave `ALLOW_INSECURE` unset.
-4. Copy the worker URL (`https://hiltoppers-canvas-proxy.<your-subdomain>.workers.dev`) into the topping's Settings → "CORS proxy URL" → **Save & refresh**.
+4. Copy the worker URL (`https://hilltoppers-canvas-proxy.<your-subdomain>.workers.dev`) into the topping's Settings → "CORS proxy URL" → **Save & refresh**.
 
 ## Deploy (wrangler)
 

@@ -1,4 +1,4 @@
-name = "hiltoppers-canvas-proxy"
+name = "hilltoppers-canvas-proxy"
 main = "worker/index.mjs"
 compatibility_date = "2026-09-01"
 
