@@ -1,13 +1,20 @@
 /* Hilltoppers Prep — settings + Canvas "plan for the day" loader.
    All Canvas calls happen in the browser with the user's own token
-   (Authorization: Bearer). The token never leaves this device. */
+   (Authorization: Bearer). The token never leaves this device.
+
+   Most Canvas instances block cross-origin browser calls (CORS), so each
+   request tries Canvas directly first and, when the browser blocks it,
+   transparently retries through an optional CORS proxy (see worker/). */
 
 (function () {
   "use strict";
 
   var STORAGE_TOKEN = "hiltoppers.canvasToken";
   var STORAGE_BASE = "hiltoppers.canvasBaseUrl";
-  var DEFAULT_BASE = "https://canvas.instructure.com";
+  var STORAGE_PROXY = "hiltoppers.canvasProxyUrl";
+  /* "canvas.instructure.com" is only a documentation host — real Canvas
+     instances live on school-specific hosts like https://<school>.instructure.com. */
+  var DEFAULT_BASE = "";
 
   var els = {};
 
@@ -16,6 +23,7 @@
   function init() {
     els.token = document.getElementById("canvas-token");
     els.baseUrl = document.getElementById("canvas-base-url");
+    els.proxyUrl = document.getElementById("canvas-proxy-url");
     els.save = document.getElementById("save-settings");
     els.status = document.getElementById("settings-status");
     els.classes = document.getElementById("classes");
@@ -24,6 +32,7 @@
 
     els.token.value = localStorage.getItem(STORAGE_TOKEN) || "";
     els.baseUrl.value = localStorage.getItem(STORAGE_BASE) || DEFAULT_BASE;
+    if (els.proxyUrl) els.proxyUrl.value = localStorage.getItem(STORAGE_PROXY) || "";
 
     els.save.addEventListener("click", onSave);
     els.toggle.addEventListener("click", onToggle);
@@ -51,9 +60,17 @@
       return;
     }
 
+    var proxy = normalizeBase(els.proxyUrl ? els.proxyUrl.value : "");
+    if (proxy && !/^https:\/\//i.test(proxy)) {
+      setStatus("Proxy URL must start with https://", true);
+      return;
+    }
+
     localStorage.setItem(STORAGE_TOKEN, token);
     localStorage.setItem(STORAGE_BASE, base);
+    localStorage.setItem(STORAGE_PROXY, proxy);
     els.baseUrl.value = base;
+    if (els.proxyUrl) els.proxyUrl.value = proxy;
     setStatus("Saved.", false);
     refresh();
   }
@@ -78,21 +95,47 @@
     return normalizeBase(localStorage.getItem(STORAGE_BASE) || DEFAULT_BASE);
   }
 
+  function currentProxy() {
+    return normalizeBase(localStorage.getItem(STORAGE_PROXY) || "");
+  }
+
   /* ---------- Canvas API ---------- */
 
+  /* ---------- Canvas API (direct first, CORS-proxy fallback) ---------- */
+
+  function toError(res) {
+    if (res.status === 401 || res.status === 403) {
+      return new Error("Canvas rejected the token (HTTP " + res.status + ").");
+    }
+    return new Error("Canvas responded with HTTP " + res.status + ".");
+  }
+
+  function requestJson(url, token, proxyBase) {
+    var fetchUrl = proxyBase ? proxyBase + "/?url=" + encodeURIComponent(url) : url;
+    return fetch(fetchUrl, {
+      headers: { Authorization: "Bearer " + token, Accept: "application/json" },
+    }).then(function (res) {
+      if (!res.ok) throw toError(res);
+      return res.json();
+    });
+  }
+
+  /* Most Canvas hosts refuse cross-origin browser requests (no CORS
+     headers), which browsers surface as an opaque TypeError. Try the
+     instance directly first; when the browser blocks the call and a
+     proxy is configured, retry through the proxy. */
   function canvasGet(path) {
     var token = currentToken();
     var url = currentBase() + "/api/v1" + path;
-    return fetch(url, {
-      headers: { Authorization: "Bearer " + token, Accept: "application/json" },
-    }).then(function (res) {
-      if (res.status === 401 || res.status === 403) {
-        throw new Error("Canvas rejected the token (HTTP " + res.status + ").");
+    var proxy = currentProxy();
+    return requestJson(url, token, "").catch(function (err) {
+      var blocked =
+        err instanceof TypeError ||
+        /Failed to fetch|NetworkError|Load failed/i.test(String(err && err.message));
+      if (blocked && proxy) {
+        return requestJson(url, token, proxy);
       }
-      if (!res.ok) {
-        throw new Error("Canvas responded with HTTP " + res.status + ".");
-      }
-      return res.json();
+      throw err;
     });
   }
 
@@ -103,7 +146,13 @@
     els.classes.textContent = "";
 
     if (!token) {
-      els.classes.appendChild(hint("Add your Canvas API token above to load today's plan for each class."));
+      els.classes.appendChild(hint("Add your Canvas API token and school's Canvas URL above to load today's plan for each class."));
+      return;
+    }
+    if (!currentBase()) {
+      setStatus("Add your school's Canvas URL (e.g. https://myschool.instructure.com).", true);
+      els.classes.textContent = "";
+      els.classes.appendChild(hint("Add your school's Canvas URL above — e.g. https://myschool.instructure.com."));
       return;
     }
 
@@ -271,12 +320,20 @@
 
   function columnLines(rows, col) {
     var lines = [];
+    /* Prefix labels only when the first column is a real label column
+       (vertical day-lists). If the header row's first cell is a date, the
+       first column is another day — its cells are not labels. */
+    var headerFirst =
+      rows[0] && rows[0].children[0] ? cleanText(rows[0].children[0].textContent) : "";
+    var labelIsDate = looksLikeDate(headerFirst);
     for (var i = 1; i < rows.length; i++) {
       var rowCells = Array.prototype.slice.call(rows[i].children);
       var value = rowCells[col] ? cleanText(rowCells[col].textContent) : "";
       if (!value || looksLikeDate(value)) continue;
       var label = rowCells[0] ? cleanText(rowCells[0].textContent) : "";
-      lines.push(label && col !== 0 && !looksLikeDate(label) ? label + ": " + value : value);
+      lines.push(
+        label && col !== 0 && !looksLikeDate(label) && !labelIsDate ? label + ": " + value : value
+      );
     }
     return lines;
   }
@@ -313,9 +370,17 @@
       if (idx === hit.col) return;
       var text = cleanText(cell.textContent);
       if (!text) return;
-      // In a horizontal day-row the sibling cells are other days — skip
-      // them. Otherwise they are plan items — keep them.
-      if (dateLikeInRow >= 2 && looksLikeDate(text)) return;
+      if (dateLikeInRow >= 2) {
+        if (!looksLikeDate(text)) {
+          rowLines.push(text);
+          return;
+        }
+        /* Date-ish sibling: keep it when it carries a plan after the date
+           ("10/3 - Quiz ch. 5"), skip it when it is a pure date (another day). */
+        var stripped = stripDate(text, keys);
+        if (stripped) rowLines.push(stripped);
+        return;
+      }
       rowLines.push(text);
     });
 
