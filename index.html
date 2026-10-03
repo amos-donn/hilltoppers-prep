@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hilltoppers Prep — Today's Plan</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div data-topping-content id="topping-content">
+      <header class="top-header">
+        <h1>Today's Plan</h1>
+        <button
+          id="settings-toggle"
+          class="ghost-btn"
+          type="button"
+          aria-expanded="true"
+          aria-controls="settings"
+        >
+          Settings
+        </button>
+      </header>
+
+      <section id="settings" class="settings" aria-label="Canvas settings">
+        <label for="canvas-token">Canvas API token</label>
+        <input
+          id="canvas-token"
+          name="canvas-token"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Paste your Canvas access token"
+        />
+
+        <label for="canvas-base-url">Canvas base URL</label>
+        <input
+          id="canvas-base-url"
+          name="canvas-base-url"
+          type="url"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="https://canvas.instructure.com"
+        />
+
+        <div class="settings-actions">
+          <button id="save-settings" class="primary-btn" type="button">Save &amp; refresh</button>
+          <span id="settings-status" class="settings-status" role="status" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <main id="classes" class="classes">
+        <p class="hint">Add your Canvas API token above to load today's plan for each class.</p>
+      </main>
+    </div>
+
+    <script src="script.js" defer></script>
+    <script src="resize.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,199 @@
+/* Hilltoppers Prep topping — designed for a ~318px-wide extension iframe. */
+
+:root {
+  --paper: #faf7f2;
+  --card: #ffffff;
+  --ink: #221c17;
+  --muted: #6f665c;
+  --line: #e5ddd1;
+  --accent: #b8472e;
+  --accent-ink: #ffffff;
+  --ok: #2f6b46;
+  --warn: #8a6d1d;
+  --radius: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+[data-topping-content] {
+  padding: 10px 12px 14px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Header */
+.top-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.top-header h1 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+/* Buttons */
+.ghost-btn,
+.primary-btn {
+  font: inherit;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ghost-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.ghost-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.primary-btn {
+  padding: 5px 10px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.primary-btn:hover {
+  filter: brightness(1.08);
+}
+
+/* Settings */
+.settings {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  margin-bottom: 10px;
+}
+
+.settings[hidden] {
+  display: none;
+}
+
+.settings label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 6px 0 3px;
+}
+
+.settings input {
+  width: 100%;
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.settings input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.settings-status {
+  font-size: 12px;
+  color: var(--ok);
+}
+
+.settings-status.is-error {
+  color: var(--accent);
+}
+
+/* Class list */
+.classes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hint {
+  margin: 0;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  text-align: center;
+}
+
+.class-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+.class-name {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.class-body {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.class-body .state {
+  margin: 0;
+}
+
+.class-body .state.is-error {
+  color: var(--accent);
+}
+
+.class-body .state.is-empty {
+  color: var(--muted);
+}
+
+.class-body .page-note {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.plan-list {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.plan-list li {
+  margin: 2px 0;
+}
