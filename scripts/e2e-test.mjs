@@ -10,7 +10,6 @@ const window = new JSDOM(`<!doctype html><html><body>
     <button id="settings-toggle" aria-expanded="true" aria-controls="settings"></button>
     <section id="settings" aria-label="Canvas settings">
       <input id="canvas-token" type="password" />
-      <input id="canvas-base-url" type="url" />
       <input id="canvas-proxy-url" type="url" />
       <button id="save-settings"></button>
       <span id="settings-status"></span>
@@ -34,7 +33,7 @@ window.fetch = async (url, init = {}) => {
   const urlStr = String(url);
   const auth = init && init.headers && init.headers.Authorization;
   calls.push({ url: urlStr, auth });
-  if (urlStr.startsWith("https://myschool.instructure.com/")) {
+  if (urlStr.startsWith("https://stjacademy.instructure.com/")) {
     // Direct call: opaque network failure — what a browser hits without CORS.
     throw new TypeError("Failed to fetch");
   }
@@ -56,7 +55,6 @@ function assert(cond, msg) {
 }
 
 window.localStorage.setItem("hiltoppers.canvasToken", "e2e-token");
-window.localStorage.setItem("hiltoppers.canvasBaseUrl", "https://myschool.instructure.com");
 window.localStorage.setItem("hiltoppers.canvasProxyUrl", "https://proxy.example");
 
 window.eval(readFileSync("script.js", "utf8"));
@@ -76,7 +74,7 @@ assert(document.body.textContent.includes("Algebra I"), "course name shown");
 assert(document.body.textContent.includes("Quiz ch. 5"), "today's plan line rendered");
 assert(document.body.textContent.includes("Weekly Plan"), "source page note shown");
 
-const direct = calls.filter((c) => c.url.includes("myschool.instructure.com"));
+const direct = calls.filter((c) => c.url.includes("stjacademy.instructure.com"));
 assert(direct.length >= 1, "direct Canvas call attempted first");
 assert(direct.every((c) => c.auth === "Bearer e2e-token"), "direct calls carried the token");
 
@@ -84,7 +82,7 @@ const proxied = calls.filter((c) => c.url.includes("proxy.example"));
 assert(proxied.length >= 2, "proxy fallback used for courses + page fetches");
 assert(proxied.every((c) => c.auth === "Bearer e2e-token"), "proxied calls carried the token");
 assert(
-  proxied.some((c) => /url=https%3A%2F%2Fmyschool\.instructure\.com/.test(c.url)),
+  proxied.some((c) => /url=https%3A%2F%2Fstjacademy\.instructure\.com/.test(c.url)),
   "proxy URL wraps the Canvas URL"
 );
 

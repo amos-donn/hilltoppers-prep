@@ -10,11 +10,9 @@
   "use strict";
 
   var STORAGE_TOKEN = "hiltoppers.canvasToken";
-  var STORAGE_BASE = "hiltoppers.canvasBaseUrl";
   var STORAGE_PROXY = "hiltoppers.canvasProxyUrl";
-  /* "canvas.instructure.com" is only a documentation host — real Canvas
-     instances live on school-specific hosts like https://<school>.instructure.com. */
-  var DEFAULT_BASE = "";
+  /* The school's Canvas host is fixed — no user input needed. */
+  var DEFAULT_BASE = "https://stjacademy.instructure.com";
 
   var els = {};
 
@@ -22,7 +20,6 @@
 
   function init() {
     els.token = document.getElementById("canvas-token");
-    els.baseUrl = document.getElementById("canvas-base-url");
     els.proxyUrl = document.getElementById("canvas-proxy-url");
     els.save = document.getElementById("save-settings");
     els.status = document.getElementById("settings-status");
@@ -31,7 +28,6 @@
     els.toggle = document.getElementById("settings-toggle");
 
     els.token.value = localStorage.getItem(STORAGE_TOKEN) || "";
-    els.baseUrl.value = localStorage.getItem(STORAGE_BASE) || DEFAULT_BASE;
     if (els.proxyUrl) els.proxyUrl.value = localStorage.getItem(STORAGE_PROXY) || "";
 
     els.save.addEventListener("click", onSave);
@@ -49,14 +45,9 @@
 
   function onSave() {
     var token = els.token.value.trim();
-    var base = normalizeBase(els.baseUrl.value);
 
     if (!token) {
       setStatus("Enter a Canvas API token first.", true);
-      return;
-    }
-    if (!base) {
-      setStatus("Enter a valid Canvas base URL (https://…).", true);
       return;
     }
 
@@ -67,9 +58,7 @@
     }
 
     localStorage.setItem(STORAGE_TOKEN, token);
-    localStorage.setItem(STORAGE_BASE, base);
     localStorage.setItem(STORAGE_PROXY, proxy);
-    els.baseUrl.value = base;
     if (els.proxyUrl) els.proxyUrl.value = proxy;
     setStatus("Saved.", false);
     refresh();
@@ -92,7 +81,7 @@
   }
 
   function currentBase() {
-    return normalizeBase(localStorage.getItem(STORAGE_BASE) || DEFAULT_BASE);
+    return DEFAULT_BASE;
   }
 
   function currentProxy() {
@@ -146,13 +135,7 @@
     els.classes.textContent = "";
 
     if (!token) {
-      els.classes.appendChild(hint("Add your Canvas API token and school's Canvas URL above to load today's plan for each class."));
-      return;
-    }
-    if (!currentBase()) {
-      setStatus("Add your school's Canvas URL (e.g. https://myschool.instructure.com).", true);
-      els.classes.textContent = "";
-      els.classes.appendChild(hint("Add your school's Canvas URL above — e.g. https://myschool.instructure.com."));
+      els.classes.appendChild(hint("Add your Canvas API token above to load today's plan for each class."));
       return;
     }
 
@@ -193,7 +176,12 @@
     return findPlanPage(course.id).then(function (page) {
       if (!page) return { kind: "empty" };
       var lines = extractTodayLines(page.body);
-      if (!lines.length) return { kind: "empty" };
+      if (!lines.length) {
+        /* A live Google Sheets/iframe embed is invisible to the Canvas API —
+           only text typed into a Canvas page itself is readable. */
+        if (/<iframe[\s>]/i.test(page.body)) return { kind: "embed" };
+        return { kind: "empty" };
+      }
       return { kind: "plan", lines: lines, sourceTitle: page.title };
     });
   }
@@ -449,6 +437,14 @@
   function renderPlan(body, plan) {
     if (plan.kind === "empty") {
       renderState(body, "No plan found for today.", "is-empty");
+      return;
+    }
+    if (plan.kind === "embed") {
+      renderState(
+        body,
+        "This homepage embeds an external sheet (Google Sheets, etc.) that the Canvas API can't read, so today's plan can't be extracted.",
+        "is-empty"
+      );
       return;
     }
     body.textContent = "";

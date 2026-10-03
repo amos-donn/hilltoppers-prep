@@ -71,6 +71,14 @@ const CASES = [
     expect: ["No plan found for today."],
     reject: ["Reading", "Essay draft"],
   },
+  {
+    name: "embedSheet (homepage embeds an external sheet iframe)",
+    html:
+      '<p>This week:</p>' +
+      '<iframe src="https://docs.google.com/spreadsheets/d/xyz/edit"></iframe>',
+    expect: ["embeds an external sheet"],
+    reject: ["No plan found for today."],
+  },
 ];
 
 let failures = 0;
@@ -81,7 +89,6 @@ for (const c of CASES) {
       <button id="settings-toggle" aria-expanded="true" aria-controls="settings"></button>
       <section id="settings" aria-label="Canvas settings">
         <input id="canvas-token" type="password" />
-        <input id="canvas-base-url" type="url" />
         <input id="canvas-proxy-url" type="url" />
         <button id="save-settings"></button>
         <span id="settings-status"></span>
@@ -91,7 +98,7 @@ for (const c of CASES) {
   </body></html>`, { url: "https://amos-donn.github.io/hiltoppers-prep/", runScripts: "outside-only", pretendToBeVisual: true }).window;
 
   window.fetch = async (url) => {
-    const target = String(url).startsWith("https://myschool.instructure.com/")
+    const target = String(url).startsWith("https://stjacademy.instructure.com/")
       ? String(url)
       : decodeURIComponent(String(url).split("url=")[1] || "");
     if (target.includes("/front_page")) {
@@ -104,7 +111,6 @@ for (const c of CASES) {
   };
 
   window.localStorage.setItem("hiltoppers.canvasToken", "t");
-  window.localStorage.setItem("hiltoppers.canvasBaseUrl", "https://myschool.instructure.com");
   window.localStorage.setItem("hiltoppers.canvasProxyUrl", "https://proxy.example");
   window.eval(SCRIPT);
 
