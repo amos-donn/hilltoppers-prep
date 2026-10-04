@@ -13,7 +13,7 @@ every request.
 3. Worker → **Settings → Variables & Secrets** → add (after first deploy; see security notes):
    - `ALLOWED_ORIGINS` = `https://amos-donn.github.io` (add `chrome-extension://<your-extension-id>` if the extension ever calls it directly)
    - `ALLOWED_SUFFIXES` = `instructure.com` (add other hosts your school uses, e.g. `myschool.edu`)
-   - leave `ALLOW_INSECURE` unset.
+   - leave `ALLOW_INSECURE` unset (and `UPSTREAM_USER_AGENT` unset unless Canvas blocks the default).
 
    Both variables are **normalized**, so the form you copy from the browser
    bar also works. All of these are equivalent:
@@ -56,5 +56,11 @@ node --test scripts/worker-test.mjs
   readable reason (`relay refused the request: Origin not allowed — add … to
   ALLOWED_ORIGINS`). No target is ever contacted for a refused caller.
 - Only these request headers are forwarded: `Authorization`, `Accept`,
-  `Content-Type`, `X-CSRF-Token`. Nothing else — and nothing about the request
-  or token is logged or persisted.
+  `Accept-Language`, `Content-Type`, `X-CSRF-Token`, and a `User-Agent` (the
+  caller's own when present, otherwise a built-in default; override with
+  `UPSTREAM_USER_AGENT`). Cookies are never forwarded, and nothing about the
+  request or token is logged or persisted.
+- The `User-Agent` is not optional in practice: Canvas is fronted by
+  Cloudflare, which answers **requests with no `User-Agent`** with an HTML
+  `403 Not Authorized` page instead of the API. If you ever see that page come
+  back through the trap, set `UPSTREAM_USER_AGENT` to a normal browser string.

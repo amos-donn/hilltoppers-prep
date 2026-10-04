@@ -138,7 +138,17 @@
       var status = err.status;
       var suffix = server ? " — " + server : "";
       if (status === 401 || status === 403) {
-        return { code: 6, label: "Canvas rejected the token (HTTP " + status + ")" + suffix, detail: server || "relay returned HTTP " + status, relay: relayHost };
+        /* An HTML block page means the request never reached the Canvas API —
+           typically Cloudflare bot/WAF protection. Don't blame the token. */
+        if (!server || /^HTML page/.test(server)) {
+          return {
+            code: 6,
+            label: "blocked upstream (HTTP " + status + ") — got an HTML block page, not the Canvas API",
+            detail: server || "empty response body",
+            relay: relayHost,
+          };
+        }
+        return { code: 6, label: "Canvas rejected the token (HTTP " + status + ")" + suffix, detail: server, relay: relayHost };
       }
       if (status === 404) {
         return { code: 7, label: "not found (HTTP 404) — wrong API path" + suffix, detail: server || targetUrl, relay: relayHost };
@@ -199,13 +209,28 @@
   function serverMessage(err) {
     var body = err && err.body;
     if (!body) return "";
+    var text = String(body);
     try {
-      var json = JSON.parse(body);
+      var json = JSON.parse(text);
       if (json && json.message) return String(json.message).slice(0, 200);
       if (json && json.errors) return String(JSON.stringify(json.errors)).slice(0, 200);
       if (json && json.error) return String(json.error).slice(0, 200);
     } catch (e) {}
-    return String(body).replace(/\s+/g, " ").trim().slice(0, 180);
+    /* Not JSON — Canvas/Cloudflare can answer with an HTML block page (e.g.
+       "Not Authorized"). Show its title and text instead of raw markup. */
+    if (/^\s*<|<!doctype|<html|<!DOCTYPE/i.test(text)) {
+      var title = (text.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "";
+      title = title.replace(/\s+/g, " ").trim();
+      var plain = text
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      var out = title ? title + ": " + plain : plain;
+      return "HTML page, not the Canvas API — " + out.slice(0, 240);
+    }
+    return text.replace(/\s+/g, " ").trim().slice(0, 200);
   }
 
   /* The relay's own error shape ({"error": "...", ...}) — distinct from a
