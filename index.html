@@ -46,6 +46,19 @@
         display: inline-flex;
         align-items: center;
         gap: 5px;
+        padding: 0;
+        border: 0;
+        background: none;
+      }
+
+      .settings-label {
+        display: none;
+        white-space: nowrap;
+      }
+
+      .gear-btn:hover .settings-label,
+      .gear-btn:focus-visible .settings-label {
+        display: inline;
       }
 
       .gear-icon {
@@ -72,6 +85,14 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      .day-date {
+        visibility: hidden;
+      }
+
+      .day-current:hover .day-date {
+        visibility: visible;
       }
 
       .day-arrow {
@@ -116,7 +137,7 @@
         </nav>
         <button
           id="settings-toggle"
-          class="ghost-btn gear-btn"
+          class="gear-btn"
           type="button"
           aria-expanded="false"
           aria-controls="settings"

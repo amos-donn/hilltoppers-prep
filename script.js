@@ -421,11 +421,12 @@
      day at a time in either direction. */
   function renderDayNav() {
     var date = targetDate();
-    if (els.dayName) els.dayName.textContent = WEEKDAY_NAMES[date.getDay()];
-    if (els.dayDate) {
-      els.dayDate.textContent =
-        dayOffset === 0 ? "Today · " + shortKey(date) : shortKey(date);
+    /* One word only: "Today" on the current day, otherwise the weekday. The
+       date is rendered too but stays hidden until the day is hovered. */
+    if (els.dayName) {
+      els.dayName.textContent = dayOffset === 0 ? "Today" : WEEKDAY_NAMES[date.getDay()];
     }
+    if (els.dayDate) els.dayDate.textContent = shortKey(date);
     if (els.dayPrev) setNavDisabled(els.dayPrev, dayOffset <= MIN_OFFSET);
     if (els.dayNext) setNavDisabled(els.dayNext, dayOffset >= MAX_OFFSET);
   }
