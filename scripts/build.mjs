@@ -3,7 +3,7 @@
 
 import { copyFile, mkdir, rm } from "node:fs/promises";
 
-const FILES = ["index.html", "style.css", "script.js", "resize.js"];
+const FILES = ["index.html", "style.css", "script.js", "resize.js", "favicon.svg"];
 
 await rm("dist", { recursive: true, force: true });
 await mkdir("dist", { recursive: true });
