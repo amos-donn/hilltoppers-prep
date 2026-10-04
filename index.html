@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Hilltoppers Prep — Today's Plan</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <!-- Iframe critical block: sizes the icons and lays out the day row even if
          the stylesheet is slow, blocked, or overridden by the host popup. Kept
          short on purpose — style.css is still the full theme and loads after
@@ -162,16 +163,6 @@
           spellcheck="false"
           placeholder="Paste your Canvas access token"
         />
-
-        <div class="cors-footnote">All Canvas API calls are relayed through
-          <a class="proxy-link" href="https://hilltoppers-canvas-proxy.amos-donn.workers.dev" target="_blank" rel="noopener">
-            hilltoppers-canvas-proxy.amos-donn.workers.dev
-          </a>
-          — Canvas refuses direct browser requests.
-          <span class="diag-footnote">Failures show the real HTTP code and the server's own message, tagged
-            <code class="diag-code">err-N</code> (for example <code class="diag-code">err-6</code> for a rejected token), instead of a generic error.
-          </span>
-        </div>
 
         <div class="settings-actions">
           <button id="save-settings" class="primary-btn" type="button">Save &amp; refresh</button>

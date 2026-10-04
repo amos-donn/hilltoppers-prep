@@ -157,34 +157,6 @@ body {
   color: var(--muted);
 }
 
-.cors-footnote {
-  margin: 6px 0 0;
-  font-size: 11px;
-  color: var(--muted);
-  line-height: 1.4;
-}
-
-.cors-footnote .proxy-link {
-  color: var(--accent);
-  text-decoration: underline;
-}
-
-.diag-footnote {
-  display: block;
-  margin-top: 4px;
-  color: var(--warn);
-}
-
-.diag-code {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  padding: 0 3px;
-  color: var(--ink);
-}
-
 /* Day navigator at the top: < Monday >, one day per arrow press. */
 .day-nav {
   display: flex;

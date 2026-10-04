@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="Hilltoppers Prep">
+  <rect width="240" height="240" rx="52" fill="#1e3b24" />
+  <rect x="70" y="64" width="31" height="112" rx="9" fill="#eef0e9" />
+  <rect x="139" y="64" width="31" height="112" rx="9" fill="#eef0e9" />
+  <rect x="139" y="96" width="31" height="92" rx="10" fill="#e8632b" />
+  <rect x="40" y="96" width="160" height="36" rx="18" fill="#e8632b" transform="rotate(-13 120 114)" />
+</svg>
