@@ -32,13 +32,13 @@
           placeholder="Paste your Canvas access token"
         />
 
-        <div class="cors-footnote">Canvas API calls that fail in the browser are forwarded through
+        <div class="cors-footnote">All Canvas API calls are relayed through
           <a class="proxy-link" href="https://hilltoppers-canvas-proxy.amos-donn.workers.dev" target="_blank" rel="noopener">
             hilltoppers-canvas-proxy.amos-donn.workers.dev
           </a>
-          .
-          <span class="diag-footnote">If a "Failed to fetch" appears, the status bar now classifies it — look for a short code like
-            <code class="diag-code">err-0</code>, <code class="diag-code">err-2</code>, or <code class="diag-code">err-6</code> in the status message.
+          — Canvas refuses direct browser requests.
+          <span class="diag-footnote">Failures show the real HTTP code and the server's own message, tagged
+            <code class="diag-code">err-N</code> (for example <code class="diag-code">err-6</code> for a rejected token), instead of a generic error.
           </span>
         </div>
 

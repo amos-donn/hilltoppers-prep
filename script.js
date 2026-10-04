@@ -1,10 +1,12 @@
 /* Hilltoppers Prep — settings + Canvas "plan for the day" loader.
-   All Canvas calls happen in the browser with the user's own token
-   (Authorization: Bearer). The token never leaves this device.
+   Every Canvas API call goes through the Cloudflare relay at
+   https://hilltoppers-canvas-proxy.amos-donn.workers.dev, which forwards the
+   request to Canvas with the user's own token (Authorization: Bearer). The
+   token is sent only to the relay and Canvas; it never leaves this device.
 
-   Most Canvas instances block cross-origin browser calls (CORS), so each   request tries Canvas directly first and, when the browser blocks it,
-   transparently retries through the CORS proxy hosted at
-   https://hilltoppers-canvas-proxy.amos-donn.workers.dev.
+   instructure.com sends no CORS headers, so a browser can never call Canvas
+   directly. There is no direct attempt and no browser fallback — every
+   request goes straight to the relay.
    */
 
 (function () {
@@ -61,10 +63,11 @@
   }
 
   function errorStatusText(diag) {
-    if (!diag || diag.code < 0) return diag && diag.label ? diag.label : "Could not reach Canvas.";
-    var code = diag.code >= 0 ? "err-" + diag.code : "";
+    if (!diag) return "Could not reach Canvas — unknown error.";
+    var code = diag.code >= 0 ? "[err-" + diag.code + "] " : "";
     var extra = diag.detail ? " (" + diag.detail + ")" : "";
-    return (code ? "[" + code + "] " : "") + diag.label + extra;
+    var via = diag.relay ? " [via relay " + diag.relay + "]" : "";
+    return code + (diag.label || "unknown error") + extra + via;
   }
 
   function setStatus(text, isError) {
@@ -93,201 +96,144 @@
     return normalizeBase(localStorage.getItem(STORAGE_PROXY) || PROXY_BASE);
   }
 
-  /* ---------- Canvas API (direct first, CORS-proxy fallback) ----------
+  /* ---------- Canvas API through the relay ----------
 
-     Every fetch failure is classified into one of 10 buckets so the status bar
-     can say exactly why it failed instead of a generic "Failed to fetch". */
+     Every failure is classified into a numbered bucket that carries the real
+     HTTP status and the server's own message, so the status bar never shows a
+     bare, generic "Failed to fetch". */
 
-  var ERROR_BUCKETS = [
-    /* 0 */[ /^Failed to fetch$/i,
-            /^NetworkError/i,
-            /Load failed/i,
-            /^AbortError/i,
-            /^NS_ERROR/i,
-      ],  /* CORS/network rejection — browser refused the direct call. */
-    /* 1 */[ /certificate/i, /net::err-/, /^ERR_CERT/, /ssl/i, /secure connexion/i,
-            /insecure/i, /privacy/i,
-      ],  /* TLS/certificate problem reaching the target. */
-    /* 2 */[ /^AbortError$/i, /^TimeoutError$/i, /^ECONNRESET$/i, /^EPIPE$/i,
-            /etimedout/i, /timeout/i, /timed out/i, /connection refused/i,
-            /refused/i, /connection timed out/i, /timedout/i,
-      ],  /* Connection reset / timeout / refused. */
-    /* 3 */[ /^TypeError:\s*Failed to fetch$/i,
-            /^TypeError:\s*(NetworkError|Load failed)/i,
-            /^TypeError$/i,
-            /blocked/i, /blocked by/i, / CORS/i,
-      ],  /**
-        *   TypeError with a CORS flavor — normally the browser's opaque
-        *   "Failed to fetch" path, but surfaced through the TypeError branch
-        *   when the runtime exposes a message. */
-    /* 4 */[ /^http:\/\//i, /^file:\/\//i, /^chrome-extension:/i,
-            /^blob:/i, /^data:/i, /^ftp:/i, /not a valid URL/i,
-            /invalid url/i, /URL constructor/i, /malformed/i,
-      ],  /**
-        *   Non-https scheme or malformed target — the fetch target was not
-        *   an https URL (or was unparseable). */
-    /* 5 */[ /^SyntaxError$/i, /unexpected token/i, /JSON at position/i,
-            /json/i, /not json/i, /unexpected end/i,
-      ],  /**
-        *   Response was not JSON — the proxy or Canvas returned HTML/text and
-        *   JSON.parse failed. */
-    /* 6 */[ /^401/i, /^403/i, /unauthorized/i, /forbidden/i, /rejected the token/i,
-      ],  /**
-        *   HTTP 401/403 — token rejected or not authorized. */
-    /* 7 */[ /^404/i, /not found/i, /does not exist/i, /no such/i, /route/i,
-      ],  /**
-        *   HTTP 404 / unknown route — the API path or proxy param was wrong. */
-    /* 8 */[ /^500/i, /^502/i, /^503/i, /^504/i, /internal error/i, /service/i,
-            /temporarily/i, /unavailable/i, /overloaded/i,
-      ],  /**
-        *   5xx / server-side error — Canvas or the proxy is having trouble. */
-    /* 9 */[],
-  ].map(function (patterns) {
-    return patterns.map(function (p) {
-      try { return new RegExp(p.source, p.flags || "i"); } catch (e) {
-        return new RegExp(p.source || p, "i");
-      }
-    });
-  });
-
-  function classifyFetchError(err, targetUrl, proxyUsed) {
+  function classifyFetchError(err, targetUrl) {
     if (!err) return { code: 9, label: "unknown error (no error object)", detail: "" };
     var msg = String(err && err.message || err);
     var name = String(err && err.name || "Error");
-    var str = name + ": " + msg;
+    var relay = String((err && err.relay) || currentProxy() || "");
+    var relayHost = relay.replace(/^https?:\/\//, "").split("/")[0];
+    var server = serverMessage(err);
 
-    // Most browsers hide the real network reason under a generic name/message.
-    // Surface what we can without inventing details.
-    var detail = (err && err.message) ? msg : "";
-
-    // 1) TypeError / opaque network failures
-    if (err instanceof TypeError || /TypeError/i.test(name)) {
-      for (var i = 0; i < ERROR_BUCKETS[3].length; i++) {
-        if (ERROR_BUCKETS[3][i].test(str)) {
-          return { code: 3, label: "browser blocked the request (TypeError)", detail: detail };
-        }
-      }
-      for (i = 0; i < ERROR_BUCKETS[0].length; i++) {
-        if (ERROR_BUCKETS[0][i].test(str)) {
-          return { code: 0, label: "network/CORS failure (browser refused the call)", detail: detail };
-        }
-      }
-      return { code: 0, label: "TypeError — browser refused the request", detail: detail };
+    // 1) A 2xx body that was not JSON (check before the status branch: the
+    //    parse error carries the response status, which can be 200).
+    if (/^ParseError$/i.test(name)) {
+      return { code: 5, label: "relay returned non-JSON (HTTP " + (err.status != null ? err.status : "?") + ")", detail: "the relay returned HTML/text instead of Canvas JSON", relay: relayHost };
     }
 
-    // 2) HTTP responses from fetch (response.ok false)
+    // 2) HTTP status returned through the relay (Canvas's own status/body).
+    //    Show the real code AND the real server message, never a generic text.
     if (err && err.status != null) {
       var status = err.status;
+      var suffix = server ? " — " + server : "";
       if (status === 401 || status === 403) {
-        return { code: 6, label: "Canvas rejected the token (HTTP " + status + ")", detail: detail };
+        return { code: 6, label: "Canvas rejected the token (HTTP " + status + ")" + suffix, detail: server || "relay returned HTTP " + status, relay: relayHost };
       }
       if (status === 404) {
-        return { code: 7, label: "resource not found (HTTP 404) — wrong API path or proxy parameter", detail: detail };
+        return { code: 7, label: "not found (HTTP 404) — wrong API path" + suffix, detail: server || targetUrl, relay: relayHost };
       }
       if (status >= 500) {
-        return { code: 8, label: "server error (HTTP " + status + ") — Canvas or proxy is having trouble", detail: detail };
+        return { code: 8, label: "server error (HTTP " + status + ")" + suffix, detail: server || "relay/Canvas returned HTTP " + status, relay: relayHost };
       }
-      return { code: 8, label: "HTTP error (status " + status + ")", detail: detail };
+      return { code: 8, label: "HTTP " + status + suffix, detail: server || "relay returned HTTP " + status, relay: relayHost };
     }
 
-    // 3) Syntax/JSON parse failures
-    if (err instanceof SyntaxError || /SyntaxError/i.test(name)) {
-      for (i = 0; i < ERROR_BUCKETS[5].length; i++) {
-        if (ERROR_BUCKETS[5][i].test(str)) {
-          return { code: 5, label: "response was not valid JSON", detail: detail };
-        }
-      }
-      return { code: 5, label: "failed to parse the response as JSON", detail: detail };
+    // 3) fetch() itself rejected: the request never reached the relay.
+    if (err instanceof TypeError || /TypeError/i.test(name)) {
+      return {
+        code: 0,
+        label: "relay unreachable at " + relayHost + " (browser refused the connection)",
+        detail: "network/CORS failure — check the relay is deployed and its ALLOWED_ORIGINS includes this site",
+        relay: relayHost,
+      };
     }
 
-    // 4) Abort/timeout/connection-level errors (match the raw strings the
-    //    browser/runtime may expose, case-insensitively per token).
-    if (/AbortError/i.test(name) ||
-        /timeout/i.test(msg) || /timed out/i.test(msg) ||
-        /etimedout/i.test(msg) || /timedout/i.test(msg) ||
-        /connection timed out/i.test(msg)) {
-      return { code: 2, label: "request timed out or was aborted", detail: detail };
+    // 4) Connection-level failures.
+    if (/AbortError/i.test(name) || /timeout/i.test(msg) || /timed out/i.test(msg) || /etimedout/i.test(msg)) {
+      return { code: 2, label: "request to the relay timed out", detail: msg, relay: relayHost };
     }
-    if (/refused/i.test(msg) || /reset/i.test(msg) ||
-        /econnrefused/i.test(msg) || /epipe/i.test(msg) ||
-        /econnreset/i.test(msg) || /reset by peer/i.test(msg)) {
-      return { code: 2, label: "connection was reset or refused", detail: detail };
+    if (/refused/i.test(msg) || /reset/i.test(msg) || /econnrefused/i.test(msg) || /econnreset/i.test(msg) || /epipe/i.test(msg)) {
+      return { code: 2, label: "connection to the relay was reset or refused", detail: msg, relay: relayHost };
     }
 
-    // 5) TLS / certificate errors
-    if (/cert/i.test(str) || /ssl/i.test(str) || /insecure/i.test(str) || /privacy/i.test(str) || /net::err-/i.test(str)) {
-      return { code: 1, label: "TLS/certificate error", detail: detail };
+    // 5) TLS / certificate errors.
+    if (/cert/i.test(msg) || /ssl/i.test(msg) || /insecure/i.test(msg) || /net::err-/i.test(msg)) {
+      return { code: 1, label: "TLS/certificate error reaching the relay", detail: msg, relay: relayHost };
     }
 
-    // 6) Non-https scheme or malformed URL
+    // 6) Malformed target URL (a build problem, not a Canvas problem).
     if (targetUrl) {
       try {
         var u = new URL(targetUrl);
         if (u.protocol !== "https:" && u.protocol !== "http:") {
-          return { code: 4, label: "target is not an https URL (" + u.protocol + ")", detail: targetUrl };
+          return { code: 4, label: "target is not an https URL (" + u.protocol + ")", detail: targetUrl, relay: relayHost };
         }
       } catch (e) {
-        return { code: 4, label: "target URL is malformed", detail: targetUrl };
+        return { code: 4, label: "target URL is malformed", detail: targetUrl, relay: relayHost };
       }
     }
-    if (/invalid url/i.test(str) || /URL constructor/i.test(str) || /malformed/i.test(str) || /^blob:/i.test(str) || /^data:/i.test(str)) {
-      return { code: 4, label: "target URL is invalid or not HTTPS", detail: detail };
+    if (err instanceof SyntaxError || /SyntaxError/i.test(name)) {
+      return { code: 5, label: "failed to parse the response as JSON", detail: msg, relay: relayHost };
     }
 
-    // 7) DNS / host not reachable
-    if (/host/i.test(str) || /dns/i.test(str) || /resolve/i.test(str) || /not found/i.test(str) || /unknown/i.test(str)) {
-      return { code: 2, label: "could not reach the host (DNS/connection)", detail: detail };
-    }
-
-    return { code: 9, label: "error (" + name + ")", detail: detail };
+    return { code: 9, label: "unexpected error (" + name + "): " + msg, detail: usedRelayFallback(err) ? "via relay " + relayHost : "", relay: relayHost };
   }
 
-  function requestJson(url, token, proxyBase) {
-    var fetchUrl = proxyBase ? proxyBase + "/?url=" + encodeURIComponent(url) : url;
+  function usedRelayFallback(err) {
+    return Boolean(err && err.usedRelay);
+  }
+
+  /* Pull the real error message out of a failed response body so the UI can
+     show what the server actually said instead of a generic failure. */
+  function serverMessage(err) {
+    var body = err && err.body;
+    if (!body) return "";
+    try {
+      var json = JSON.parse(body);
+      if (json && json.message) return String(json.message).slice(0, 200);
+      if (json && json.errors) return String(JSON.stringify(json.errors)).slice(0, 200);
+      if (json && json.error) return String(json.error).slice(0, 200);
+    } catch (e) {}
+    return String(body).replace(/\s+/g, " ").trim().slice(0, 180);
+  }
+
+  function requestJson(url, token, relayBase) {
+    var fetchUrl = relayBase + "/?url=" + encodeURIComponent(url);
     return fetch(fetchUrl, {
       headers: { Authorization: "Bearer " + token, Accept: "application/json" },
     }).then(function (res) {
-      if (!res.ok) {
-        var httpErr = new Error("HTTP " + res.status);
-        httpErr.status = res.status;
-        throw httpErr;
-      }
-      return res.json();
+      return res.text().then(function (body) {
+        if (!res.ok) {
+          var httpErr = new Error("HTTP " + res.status);
+          httpErr.name = "HttpError";
+          httpErr.status = res.status;
+          httpErr.statusText = res.statusText || "";
+          httpErr.body = body;
+          httpErr.target = url;
+          httpErr.relay = relayBase;
+          httpErr.usedRelay = true;
+          throw httpErr;
+        }
+        try {
+          return JSON.parse(body);
+        } catch (e) {
+          var parseErr = new Error("relay returned non-JSON for " + url);
+          parseErr.name = "ParseError";
+          parseErr.status = res.status;
+          parseErr.body = body;
+          parseErr.target = url;
+          parseErr.relay = relayBase;
+          parseErr.usedRelay = true;
+          throw parseErr;
+        }
+      });
     });
   }
 
+  /* Relay-only: the browser cannot call Canvas directly (instructure.com sends
+     no CORS headers), so every request goes straight through the relay. */
   function canvasGet(path) {
-    var token = currentToken();
     var url = currentBase() + "/api/v1" + path;
-    var proxy = currentProxy();
-    var classifier = {
-      code: -1,
-      label: "",
-      source: "",
-      target: url,
-      proxyUsed: false,
-    };
-
-    function setClassifier(err, source) {
-      classifier.code = classifyFetchError(err, classifier.target, classifier.proxyUsed).code;
-      classifier.label = classifyFetchError(err, classifier.target, classifier.proxyUsed).label;
-      classifier.source = source;
-    }
-
-    return requestJson(url, token, "").catch(function (err) {
-      classifier.proxyUsed = false;
-      setClassifier(err, "direct");
-      var blocked =
-        err instanceof TypeError ||
-        /Failed to fetch|NetworkError|Load failed/i.test(String(err && err.message));
-      if (blocked && proxy) {
-        classifier.proxyUsed = true;
-        setClassifier(err, "direct-then-proxy");
-        return requestJson(url, token, proxy).catch(function (proxyErr) {
-          setClassifier(proxyErr, "proxy");
-          throw proxyErr;
-        });
-      }
+    var relay = currentProxy();
+    return requestJson(url, currentToken(), relay).catch(function (err) {
+      if (err && !err.target) err.target = url;
+      if (err && !err.relay) err.relay = relay;
+      if (err) err.usedRelay = true;
       throw err;
     });
   }
@@ -316,11 +262,13 @@
         renderCourseCards(courses);
       })
       .catch(function (err) {
-        var diag = classifyFetchError(err, currentBase() + "/api/v1/courses", false);
-        els.latestDiag = { label: err.message || "Could not reach Canvas.", code: diag.code, detail: diag.detail, target: currentBase() + "/api/v1/courses", proxyUsed: false };
-        setStatus(errorStatusText(diag), true);
+        var target = currentBase() + "/api/v1/courses";
+        var diag = classifyFetchError(err, target, true);
+        var text = errorStatusText(diag);
+        els.latestDiag = { label: diag.label, code: diag.code, detail: diag.detail, target: target, proxyUsed: true };
+        setStatus(text, true);
         els.classes.textContent = "";
-        els.classes.appendChild(hint(err.message || "Could not reach Canvas." + (diag.detail ? " (" + diag.detail + ")" : "")));
+        els.classes.appendChild(hint(text));
       });
   }
 
@@ -335,7 +283,8 @@
           renderPlan(card.body, plan);
         })
         .catch(function (err) {
-          var diag = classifyFetchError(err, currentBase() + "/api/v1/courses/" + course.id + "/front_page", false);
+          var target = currentBase() + "/api/v1/courses/" + course.id + "/front_page";
+          var diag = classifyFetchError(err, target, true);
           renderState(card.body, errorStatusText(diag), "is-error");
         });
     });
