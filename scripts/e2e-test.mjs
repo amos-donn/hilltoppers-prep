@@ -1,11 +1,30 @@
-/* End-to-end test: the topping must render today's plan when Canvas refuses
-   direct cross-origin calls (no CORS headers) and only the proxy succeeds.
+/* End-to-end tests for the Hilltoppers Prep topping.
+
+   Canvas is never called directly — instructure.com sends no CORS headers, so
+   every request goes straight through the Cloudflare relay. These tests cover:
+     1. the happy path (relay returns courses + a front page with today's plan)
+     2. a rejected token (relay/Canvas 401) renders the real code + message
+     3. an unreachable relay renders a classified error, not "Failed to fetch"
+     4. a non-JSON 200 body from the relay renders err-5
    Run: bun scripts/e2e-test.mjs   (requires: bun add -d jsdom) */
 
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 
-const window = new JSDOM(`<!doctype html><html><body>
+const SCRIPT = readFileSync("script.js", "utf8");
+const RELAY = "https://hilltoppers-canvas-proxy.amos-donn.workers.dev";
+const CANVAS = "https://stjacademy.instructure.com";
+
+const results = [];
+function assert(cond, msg) {
+  results.push({ ok: Boolean(cond), msg });
+  console.log((cond ? "ok   " : "FAIL ") + msg);
+  if (!cond) process.exitCode = 1;
+}
+
+function makeWindow() {
+  return new JSDOM(
+    `<!doctype html><html><body>
   <div data-topping-content id="topping-content">
     <button id="settings-toggle" aria-expanded="true" aria-controls="settings"></button>
     <section id="settings" aria-label="Canvas settings">
@@ -15,83 +34,142 @@ const window = new JSDOM(`<!doctype html><html><body>
     </section>
     <main id="classes"></main>
   </div>
-</body></html>`, {
-  url: "https://amos-donn.github.io/hilltoppers-prep/",
-  runScripts: "outside-only",
-  pretendToBeVisual: true,
-}).window;
-
-const { document } = window;
-
-const planHtml =
-  '<table><tr><th>Fri 10/2</th><th>Sat 10/3</th><th>Mon 10/5</th></tr>' +
-  '<tr><td>Reading</td><td>Quiz ch. 5</td><td>Homework 12</td></tr></table>';
-
-const calls = [];
-window.fetch = async (url, init = {}) => {
-  const urlStr = String(url);
-  const auth = init && init.headers && init.headers.Authorization;
-  calls.push({ url: urlStr, auth });
-  if (urlStr.startsWith("https://stjacademy.instructure.com/")) {
-    // Direct call: opaque network failure — what a browser hits without CORS.
-    throw new TypeError("Failed to fetch");
-  }
-  // Proxy path: https://proxy.example/?url=<encoded canvas url>
-  const target = decodeURIComponent(urlStr.split("url=")[1] || "");
-  if (target.includes("/front_page")) {
-    return new Response(JSON.stringify({ title: "Weekly Plan", body: planHtml }), { status: 200 });
-  }
-  if (target.includes("/api/v1/courses")) {
-    return new Response(JSON.stringify([{ id: 101, name: "Algebra I" }]), { status: 200 });
-  }
-  return new Response("[]", { status: 200 });
-};
-
-const results = [];
-function assert(cond, msg) {
-  results.push({ ok: Boolean(cond), msg });
-  if (!cond) console.error("FAIL: " + msg);
-}  window.localStorage.setItem("hiltoppers.canvasToken", "e2e-token");
-  window.localStorage.setItem("hiltoppers.canvasProxyUrl", "");
-
-window.eval(readFileSync("script.js", "utf8"));
-// JSDOM fires DOMContentLoaded itself after parsing; do not double-dispatch.
-
-const errors = [];
-process.on("unhandledRejection", (r) => errors.push("unhandled: " + String((r && r.stack) || r)));
-
-// Wait for the async refresh chain to finish rendering.
-for (let i = 0; i < 100 && !document.body.textContent.includes("Algebra I"); i++) {
-  await new Promise((r) => setTimeout(r, 10));
+</body></html>`,
+    {
+      url: "https://amos-donn.github.io/hilltoppers-prep/",
+      runScripts: "outside-only",
+      pretendToBeVisual: true,
+    }
+  ).window;
 }
 
-const cards = document.querySelectorAll(".class-card");
-assert(cards.length === 1, "one class card rendered");
-assert(document.body.textContent.includes("Algebra I"), "course name shown");
-assert(document.body.textContent.includes("Quiz ch. 5"), "today's plan line rendered");
-assert(document.body.textContent.includes("Weekly Plan"), "source page note shown");
+/* Boot the topping with a controlled fetch and wait for the async refresh. */
+async function boot(fetchImpl) {
+  const window = makeWindow();
+  const calls = [];
+  window.fetch = async (url, init = {}) => {
+    const urlStr = String(url);
+    calls.push({ url: urlStr, auth: init && init.headers && init.headers.Authorization });
+    if (urlStr.startsWith(CANVAS)) {
+      throw new Error("direct Canvas call must never happen: " + urlStr);
+    }
+    if (!urlStr.startsWith(RELAY)) {
+      throw new Error("request did not use the relay: " + urlStr);
+    }
+    return fetchImpl(urlStr, init);
+  };
+  window.localStorage.setItem("hiltoppers.canvasToken", "e2e-token");
+  window.localStorage.setItem("hiltoppers.canvasProxyUrl", "");
+  window.eval(SCRIPT);
 
-const direct = calls.filter((c) => c.url.includes("stjacademy.instructure.com"));
-assert(direct.length >= 1, "direct Canvas call attempted first");
-assert(direct.every((c) => c.auth === "Bearer e2e-token"), "direct calls carried the token");
+  return { window, calls };
+}
 
-const proxied = calls.filter((c) => c.url.includes("hilltoppers-canvas-proxy.amos-donn.workers.dev"));
-assert(proxied.length >= 2, "proxy fallback used for courses + page fetches");
-assert(proxied.every((c) => c.auth === "Bearer e2e-token"), "proxied calls carried the token");
-assert(
-  proxied.some((c) => /url=https%3A%2F%2Fstjacademy\.instructure\.com/.test(c.url)),
-  "proxy URL wraps the Canvas URL"
+/* Wait until the rendered page contains `needle` (or the timeout elapses). */
+async function settle(window, needle, ms = 2500) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (window.document.body.textContent.includes(needle)) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+function targetOf(urlStr) {
+  return decodeURIComponent(urlStr.split("url=")[1] || "");
+}
+
+const statusEl = (w) => w.document.getElementById("settings-status").textContent;
+const bodyText = (w) => w.document.body.textContent;
+
+/* ---------- 1) happy path: everything through the relay ---------- */
+/* Build the plan table around the real current date so the fixture never
+   goes stale. */
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const dayShift = (off) => {
+  const d = new Date();
+  d.setDate(d.getDate() + off);
+  return d;
+};
+const label = (d) => WEEKDAYS[d.getDay()] + " " + (d.getMonth() + 1) + "/" + d.getDate();
+const planHtml =
+  "<table><tr><th>" + label(dayShift(-1)) + "</th><th>" + label(dayShift(0)) +
+  "</th><th>" + label(dayShift(2)) + "</th></tr>" +
+  "<tr><td>Reading</td><td>Quiz ch. 5</td><td>Homework 12</td></tr></table>";
+
+{
+  const { window, calls } = await boot(async (urlStr) => {
+    const target = targetOf(urlStr);
+    if (target.includes("/front_page")) {
+      return new Response(JSON.stringify({ title: "Weekly Plan", body: planHtml }), { status: 200 });
+    }
+    if (target.includes("/api/v1/courses")) {
+      return new Response(JSON.stringify([{ id: 101, name: "Algebra I" }]), { status: 200 });
+    }
+    return new Response("[]", { status: 200 });
+  });
+  await settle(window, "Quiz ch. 5");
+
+  assert(window.document.querySelectorAll(".class-card").length === 1, "one class card rendered");
+  assert(bodyText(window).includes("Algebra I"), "course name shown");
+  assert(bodyText(window).includes("Quiz ch. 5"), "today's plan line rendered");
+  assert(bodyText(window).includes("Weekly Plan"), "source page note shown");
+  assert(calls.length > 0, "requests were made");
+  assert(
+    calls.every((c) => c.url.startsWith(RELAY)),
+    "relay-only: every request went to the relay (no direct Canvas call)"
+  );
+  assert(calls.every((c) => c.auth === "Bearer e2e-token"), "requests carried the token to the relay");
+  assert(
+    calls.some((c) => /url=https%3A%2F%2Fstjacademy\.instructure\.com/.test(c.url)),
+    "relay URL wraps the Canvas URL"
+  );
+}
+
+/* ---------- 2) rejected token: real HTTP code + server message ---------- */
+{
+  const { window } = await boot(async () => {
+    return new Response(JSON.stringify({ message: "Invalid access token." }), { status: 401 });
+  });
+  await settle(window, "[err-6]");
+
+  const text = bodyText(window);
+  assert(text.includes("[err-6]"), "401 renders the err-6 code");
+  assert(text.includes("Canvas rejected the token (HTTP 401)"), "401 renders the real HTTP code");
+  assert(text.includes("Invalid access token."), "401 renders the server's own message");
+  assert(!/Failed to fetch/.test(text), "no generic 'Failed to fetch' text for a 401");
+  assert(statusEl(window).includes("[err-6]"), "status bar shows the classified code");
+}
+
+/* ---------- 3) unreachable relay: classified, not generic ---------- */
+{
+  const { window } = await boot(async () => {
+    throw new TypeError("Failed to fetch");
+  });
+  await settle(window, "[err-0]");
+
+  const text = bodyText(window);
+  assert(text.includes("[err-0]"), "unreachable relay renders err-0");
+  assert(
+    text.includes("relay unreachable at hilltoppers-canvas-proxy.amos-donn.workers.dev"),
+    "err-0 names the relay that could not be reached"
+  );
+  assert(!/^\s*Failed to fetch\s*$/.test(text), "never shows a bare 'Failed to fetch' as the whole message");
+  assert(statusEl(window).includes("[err-0]"), "status bar shows err-0");
+}
+
+/* ---------- 4) non-JSON 200 body ---------- */
+{
+  const { window } = await boot(async () => new Response("<html>maintenance</html>", { status: 200 }));
+  await settle(window, "[err-5]");
+
+  const text = bodyText(window);
+  assert(text.includes("[err-5]"), "non-JSON 200 renders err-5");
+  assert(text.includes("relay returned non-JSON"), "err-5 explains the non-JSON body");
+}
+
+console.log(
+  results.every((r) => r.ok)
+    ? "E2E OK — all assertions passed"
+    : "E2E FAILED — " + results.filter((r) => !r.ok).length + " assertion(s) failed"
 );
-assert(
-  proxied.every((c) => c.url.includes("hilltoppers-canvas-proxy.amos-donn.workers.dev")),
-  "all proxied calls target the fixed worker URL"
-);
-
-
-
-console.log(results.every((r) => r.ok) ? "E2E OK — all assertions passed" : "E2E FAILED");
-if (errors.length) console.log("window errors:\n  " + errors.join("\n  "));
-console.log("status:", JSON.stringify(document.getElementById("settings-status").textContent));
-console.log("classes HTML:", document.getElementById("classes").innerHTML.slice(0, 400));
-console.log(calls.map((c) => "  call: " + c.url).join("\n"));
 process.exit(results.every((r) => r.ok) ? 0 : 1);

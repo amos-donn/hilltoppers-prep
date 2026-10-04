@@ -81,6 +81,40 @@ const CASES = [
   },
 ];
 
+/* The fixtures above are written with "10/3" as *today* and "10/2"/"10/6" as
+   other days. Rewrite them against the real current date so the suite does not
+   break when the calendar day changes. */
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const dayShift = (off) => {
+  const d = new Date();
+  d.setDate(d.getDate() + off);
+  return d;
+};
+const short = (d) => d.getMonth() + 1 + "/" + d.getDate();
+const long = (d) => MONTHS[d.getMonth()] + " " + d.getDate();
+const TODAY_D = dayShift(0);
+const OTHER_A_D = dayShift(-1);
+const OTHER_B_D = dayShift(3);
+
+const SUB = [
+  ["October 3", long(TODAY_D)],
+  ["October 2", long(OTHER_A_D)],
+  ["October 6", long(OTHER_B_D)],
+  ["10/3", short(TODAY_D)],
+  ["10/2", short(OTHER_A_D)],
+  ["10/6", short(OTHER_B_D)],
+];
+const sub = (s) => SUB.reduce((acc, [from, to]) => acc.split(from).join(to), s);
+
+for (const c of CASES) {
+  c.html = sub(c.html);
+  c.expect = c.expect.map(sub);
+  c.reject = c.reject.map(sub);
+}
+
 let failures = 0;
 
 for (const c of CASES) {
