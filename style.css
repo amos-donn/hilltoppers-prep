@@ -59,26 +59,10 @@ body {
 }
 
 /* Buttons */
-.ghost-btn,
 .primary-btn {
   font: inherit;
   border-radius: 6px;
   cursor: pointer;
-}
-
-.ghost-btn {
-  padding: 3px 8px;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--muted);
-}
-
-.ghost-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.primary-btn {
   padding: 5px 10px;
   border: 1px solid var(--accent);
   background: var(--accent);
@@ -193,6 +177,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* The date stays out of the way until you hover the day. */
+  visibility: hidden;
+}
+
+.day-current:hover .day-date,
+.day-current:focus-within .day-date {
+  visibility: visible;
 }
 
 .day-arrow {
@@ -263,11 +254,22 @@ body {
 }
 
 /* Settings is just a gear; the word appears on hover/focus. */
+/* Just a bare gear - no box around the button. */
 .gear-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.gear-btn:hover,
+.gear-btn:focus-visible {
+  color: var(--accent);
 }
 
 .gear-icon {
@@ -276,18 +278,15 @@ body {
   flex: 0 0 auto;
 }
 
+/* No slide-out: the word simply appears beside the gear on hover/focus. */
 .settings-label {
-  max-width: 0;
-  overflow: hidden;
-  opacity: 0;
+  display: none;
   white-space: nowrap;
-  transition: max-width 120ms ease, opacity 120ms ease;
 }
 
 .gear-btn:hover .settings-label,
 .gear-btn:focus-visible .settings-label {
-  max-width: 90px;
-  opacity: 1;
+  display: inline;
 }
 
 .settings input {

@@ -92,6 +92,31 @@ for (const [id, want] of [["day-prev", "left"], ["day-next", "right"]]) {
   assert(apexSide(p.getAttribute("d")) === want, id + " triangle points " + want);
 }
 
+/* --- no box around the gear, and the word does not slide out --- */
+const gearRule = (CSS.match(/\.gear-btn\s*\{([^}]*)\}/) || [])[1] || "";
+assert(/border:\s*(0|none)/.test(gearRule), ".gear-btn draws no box");
+assert(/background:\s*none/.test(gearRule), ".gear-btn has no fill");
+assert(
+  !/ghost-btn/.test(document.getElementById("settings-toggle").className),
+  "the gear button no longer carries the boxed ghost-btn class"
+);
+
+const labelRule = (CSS.match(/\.settings-label\s*\{([^}]*)\}/) || [])[1] || "";
+assert(/display:\s*none/.test(labelRule), "the word Settings is hidden until hover");
+assert(
+  !/transition/.test(labelRule) && !/opacity/.test(labelRule),
+  "the word does not slide out (no transition/opacity fade)"
+);
+assert(
+  /\.gear-btn:hover \.settings-label,[\s\S]*?display:\s*inline/.test(CSS),
+  "hovering the gear shows the word Settings"
+);
+
+/* --- the date only surfaces when the day is hovered --- */
+const dateRule = (CSS.match(/\.day-date\s*\{([^}]*)\}/) || [])[1] || "";
+assert(/visibility:\s*hidden/.test(dateRule), "the date is out of sight by default");
+assert(/\.day-current:hover \.day-date/.test(CSS), "hovering the day reveals the date");
+
 /* --- settings is closed until the gear is clicked --- */
 const settings = document.getElementById("settings");
 const gear = document.getElementById("settings-toggle");

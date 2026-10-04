@@ -108,9 +108,9 @@ assert(document.body.textContent.includes(item(todayIndex)), "today's column ren
 const prev = document.getElementById("day-prev");
 const next = document.getElementById("day-next");
 assert(Boolean(prev) && Boolean(next), "prev/next arrow buttons exist");
-assert(dayName() === WEEKDAY_NAMES[new Date().getDay()], "the nav shows today's weekday name");
-assert(dayDate() === "Today · " + (new Date().getMonth() + 1) + "/" + new Date().getDate(),
-  "the nav marks the current day as Today");
+assert(dayName() === "Today", "the nav shows one word: Today on the current day");
+assert(dayDate() === (new Date().getMonth() + 1) + "/" + new Date().getDate(),
+  "the hover-only date is the current date");
 assert(prev.getAttribute("aria-disabled") === "false", "prev is enabled on the current day");
 
 /* --- fact cards: a title per labelled row, value beneath --- */
