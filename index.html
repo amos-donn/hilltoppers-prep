@@ -12,14 +12,60 @@
         <h1>Today's Plan</h1>
         <button
           id="settings-toggle"
-          class="ghost-btn"
+          class="ghost-btn gear-btn"
           type="button"
           aria-expanded="true"
           aria-controls="settings"
+          aria-label="Settings"
         >
-          Settings
+          <svg
+            class="gear-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <circle cx="12" cy="12" r="3.3" />
+            <path d="M12 2.5v2.3M12 19.2v2.3M2.5 12h2.3M19.2 12h2.3M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6" />
+          </svg>
+          <span class="settings-label">Settings</span>
         </button>
       </header>
+
+      <nav id="day-nav" class="day-nav" aria-label="Change the day shown">
+        <button id="day-prev" class="day-arrow" type="button" aria-label="Previous day">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M14.5 5.5 8 12l6.5 6.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+        <div class="day-current">
+          <span id="day-name" class="day-name">Today</span>
+          <span id="day-date" class="day-date"></span>
+        </div>
+        <button id="day-next" class="day-arrow" type="button" aria-label="Next day">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M9.5 5.5 16 12l-6.5 6.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </nav>
 
       <section id="settings" class="settings" aria-label="Canvas settings">
         <label for="canvas-token">Canvas API token</label>
@@ -47,8 +93,6 @@
           <span id="settings-status" class="settings-status" role="status" aria-live="polite"></span>
         </div>
       </section>
-
-      <div id="day-bar" class="day-bar" role="group" aria-label="Choose a day to show"></div>
 
       <main id="classes" class="classes">
         <p class="hint">Add your Canvas API token above to load the plan for each class.</p>

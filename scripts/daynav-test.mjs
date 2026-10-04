@@ -1,10 +1,10 @@
-/* Look-ahead test.
+/* Day navigation + fact-card test.
 
-   The day chips (Today, then the next few days) must re-render every class card
-   for the chosen day, using the already-fetched calendar page — no extra Canvas
-   requests. The fixture is a weekday-column calendar (Monday..Sunday) with one
-   distinct item per day, so the expected content is unambiguous whatever day
-   the suite runs on.
+   The top of the popup shows "< Monday >": arrow buttons step one day at a
+   time, the day name follows, and every class card re-renders that day's
+   column as fact cards — a title per labelled row with the value beneath it.
+   The fixture is a weekday-column calendar (Monday..Sunday) with one distinct
+   item per day, so expectations hold whatever day the suite runs on.
    Run: bun scripts/daynav-test.mjs   (requires: bun add -d jsdom) */
 
 import { readFileSync } from "node:fs";
@@ -37,6 +37,8 @@ const header = [0, 1, 2, 3, 4, 5, 6]
     return "<th>" + WEEKDAY_NAMES[d.getDay()] + "</th>";
   })
   .join("");
+/* No label cell in the header row, but the data rows do have one — the parser
+   has to notice that and shift the day columns. */
 const row = [0, 1, 2, 3, 4, 5, 6].map((i) => "<td>" + item(i) + "</td>").join("");
 const pageBody = "<table><tr>" + header + "</tr><tr><td>CLASSWORK</td>" + row + "</tr></table>";
 
@@ -44,12 +46,19 @@ const window = new JSDOM(
   `<!doctype html><html><body>
   <div data-topping-content id="topping-content">
     <button id="settings-toggle" aria-expanded="true" aria-controls="settings"></button>
+    <nav id="day-nav" class="day-nav">
+      <button id="day-prev" class="day-arrow" type="button"></button>
+      <div class="day-current">
+        <span id="day-name" class="day-name"></span>
+        <span id="day-date" class="day-date"></span>
+      </div>
+      <button id="day-next" class="day-arrow" type="button"></button>
+    </nav>
     <section id="settings" aria-label="Canvas settings">
       <input id="canvas-token" type="password" />
       <button id="save-settings"></button>
       <span id="settings-status"></span>
     </section>
-    <div id="day-bar" class="day-bar"></div>
     <main id="classes"></main>
   </div>
 </body></html>`,
@@ -89,40 +98,56 @@ async function waitFor(needle, ms = 2500) {
   return document.body.textContent.includes(needle);
 }
 
+const dayName = () => document.getElementById("day-name").textContent;
+const dayDate = () => document.getElementById("day-date").textContent;
+
 await waitFor(item(todayIndex));
 assert(document.body.textContent.includes(item(todayIndex)), "today's column renders first");
 
-const chips = document.querySelectorAll("#day-bar .day-chip");
-assert(chips.length === 5, "five day chips render (today + next 4)");
-assert(chips[0].textContent === "Today", "the first chip is labelled Today");
-assert(chips[0].classList.contains("is-active"), "Today is active by default");
-assert(gotTodayOnly(document.body.textContent), "no other day's column leaked in");
+/* --- the day navigator --- */
+const prev = document.getElementById("day-prev");
+const next = document.getElementById("day-next");
+assert(Boolean(prev) && Boolean(next), "prev/next arrow buttons exist");
+assert(dayName() === WEEKDAY_NAMES[new Date().getDay()], "the nav shows today's weekday name");
+assert(dayDate() === "Today · " + (new Date().getMonth() + 1) + "/" + new Date().getDate(),
+  "the nav marks the current day as Today");
+assert(prev.getAttribute("aria-disabled") === "false", "prev is enabled on the current day");
 
-function gotTodayOnly(text) {
-  for (let i = 0; i < 7; i++) {
-    if (i === todayIndex) continue;
-    if (text.includes(item(i))) return false;
-  }
-  return true;
-}
+/* --- fact cards: a title per labelled row, value beneath --- */
+const label = document.querySelector(".fact-label");
+assert(Boolean(label), "a fact card renders with a label element");
+assert(label.textContent === "CLASSWORK", "the row's left-hand cell becomes the card title");
+const value = label.nextElementSibling;
+assert(
+  value && value.classList.contains("fact-value"),
+  "the value sits directly beneath the title"
+);
+assert(value.textContent === item(todayIndex), "the value is today's column content");
 
+/* --- stepping forward --- */
 const fetchesBefore = calls.length;
-
-/* Click the chip for tomorrow. */
-chips[1].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+next.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 await waitFor(item(tomorrowIndex));
 
-const text = document.body.textContent;
-assert(text.includes(item(tomorrowIndex)), "clicking the next chip shows tomorrow's column");
-assert(!text.includes(item(todayIndex)), "today's column is replaced, not appended");
-assert(/Tomorrow,/.test(text), "the day note says Tomorrow");
+const tomorrow = new Date();
+tomorrow.setDate(tomorrow.getDate() + 1);
 assert(
-  document.querySelectorAll("#day-bar .day-chip")[1].classList.contains("is-active"),
-  "the chosen chip becomes active"
+  dayName() === WEEKDAY_NAMES[tomorrow.getDay()],
+  "clicking the right arrow moves to the next weekday"
 );
+assert(document.body.textContent.includes(item(tomorrowIndex)), "the card shows tomorrow's column");
+assert(!document.body.textContent.includes(item(todayIndex)), "today's column is replaced, not appended");
 assert(
   calls.length === fetchesBefore,
   "changing the day does not re-fetch Canvas (re-rendered from the cached page)"
+);
+
+/* --- stepping back --- */
+prev.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+await waitFor(item(todayIndex));
+assert(
+  document.body.textContent.includes(item(todayIndex)),
+  "clicking the left arrow returns to today's column"
 );
 
 console.log(

@@ -165,6 +165,28 @@ CASES.push({
   reject: ["Other focus", "Other homework"],
 });
 
+/* A labelled row whose cell holds several lines (one per <br>) — the
+   humanities CLASSWORK cell — must surface every line under its title. */
+CASES.push({
+  name: "weekdayHeaderMultiLineCell (several lines in one day's cell)",
+  html:
+    "<table><tr><th>Day</th>" +
+    heads((i) => WEEKDAY_NAMES[dayAt(i).getDay()]) +
+    "</tr><tr><td>FOCUS</td>" +
+    cols((i) => (i === todayIndex ? "Kallipolis / Justice" : "Other focus")) +
+    "</tr><tr><td>CLASSWORK</td>" +
+    cols((i) =>
+      i === todayIndex
+        ? "Vocabulary Quiz<br>Finish Kallipolis<br>Plato vs Aristotle"
+        : "Other work"
+    ) +
+    "</tr><tr><td>HOMEWORK</td>" +
+    cols((i) => (i === todayIndex ? "TBA" : "Other homework")) +
+    "</tr></table>",
+  expect: ["FOCUS", "Kallipolis / Justice", "CLASSWORK", "Vocabulary Quiz", "Finish Kallipolis", "Plato vs Aristotle", "HOMEWORK", "TBA"],
+  reject: ["Other focus", "Other work", "Other homework"],
+});
+
 let failures = 0;
 
 for (const c of CASES) {
@@ -198,7 +220,7 @@ for (const c of CASES) {
   window.localStorage.setItem("hiltoppers.canvasProxyUrl", "https://proxy.example");
   window.eval(SCRIPT);
 
-  for (let i = 0; i < 100 && !window.document.querySelector(".class-body .state, .plan-list"); i++) {
+  for (let i = 0; i < 100 && !window.document.querySelector(".class-body .state, .fact-list"); i++) {
     await new Promise((r) => setTimeout(r, 10));
   }
 
