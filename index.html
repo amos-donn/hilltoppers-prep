@@ -43,22 +43,28 @@
       }
 
       .gear-btn {
+        position: relative;
         display: inline-flex;
         align-items: center;
-        gap: 5px;
+        gap: 0;
         padding: 0;
         border: 0;
         background: none;
       }
 
       .settings-label {
+        position: absolute;
+        right: 100%;
+        top: 50%;
+        transform: translateY(-50%);
+        padding-right: 6px;
         display: none;
         white-space: nowrap;
       }
 
       .gear-btn:hover .settings-label,
       .gear-btn:focus-visible .settings-label {
-        display: inline;
+        display: block;
       }
 
       .gear-icon {
@@ -88,11 +94,15 @@
       }
 
       .day-date {
-        visibility: hidden;
+        max-height: 0;
+        opacity: 0;
+        transition: max-height 140ms ease, opacity 140ms ease;
       }
 
-      .day-current:hover .day-date {
-        visibility: visible;
+      .day-current:hover .day-date,
+      .day-current:focus-within .day-date {
+        max-height: 16px;
+        opacity: 1;
       }
 
       .day-arrow {
@@ -118,7 +128,6 @@
   <body>
     <div data-topping-content id="topping-content">
       <header class="top-header">
-        <h1>Today's Plan</h1>
         <nav id="day-nav" class="day-nav" aria-label="Change the day shown">
           <button id="day-prev" class="day-arrow" type="button" aria-label="Previous day">
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
