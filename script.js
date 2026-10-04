@@ -347,7 +347,7 @@
     planCache = {};
 
     if (!token) {
-      els.classes.appendChild(hint("Add your Canvas API token above to load the plan for each class."));
+      els.classes.appendChild(hint("Add your Canvas API token in Settings (the gear) to load the plan for each class."));
       return;
     }
 

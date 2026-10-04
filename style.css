@@ -55,6 +55,7 @@ body {
   margin: 0;
   font-size: 15px;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 /* Buttons */
@@ -157,17 +158,13 @@ body {
   color: var(--muted);
 }
 
-/* Day navigator at the top: < Monday >, one day per arrow press. */
+/* Day switcher: lives in the header between the title and the settings gear.
+   No box of its own - just two triangle arrows around the day name. */
 .day-nav {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 6px 0 10px;
-  padding: 5px 8px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  gap: 4px;
+  min-width: 0;
 }
 
 .day-current {
@@ -202,24 +199,22 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 20px;
+  height: 20px;
   flex: 0 0 auto;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: var(--paper);
+  border: 0;
+  background: none;
   color: var(--ink);
   cursor: pointer;
 }
 
 .day-arrow svg {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
 }
 
 .day-arrow:hover {
-  border-color: var(--accent);
   color: var(--accent);
 }
 

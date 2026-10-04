@@ -60,8 +60,8 @@ const crit = flat(critEl ? critEl.textContent : "");
 assert(crit.includes("box-sizing: border-box"), "critical block uses border-box so padding can't overflow the iframe");
 assert(crit.includes(".day-nav { display: flex"), "critical block lays the day row out as a flex row");
 assert(crit.includes(".gear-icon { width: 16px"), "critical block pins the gear icon to 16px");
-assert(crit.includes(".day-arrow {") && crit.includes("width: 26px"), "critical block pins the day arrows to 26px");
-assert(crit.includes(".day-arrow svg { width: 18px"), "critical block pins the arrow glyphs to 18px");
+assert(crit.includes(".day-arrow {") && crit.includes("width: 20px"), "critical block pins the day arrows to 20px");
+assert(crit.includes(".day-arrow svg { width: 14px"), "critical block pins the arrow glyphs to 14px");
 
 /* --- 3) the embed contract: the wrapper plus the day-switcher landmarks --- */
 const content = document.querySelector("[data-topping-content]");
