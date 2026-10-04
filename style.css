@@ -30,12 +30,16 @@ body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 13px;
   line-height: 1.45;
+  overflow-x: hidden;
 }
 
 [data-topping-content] {
   padding: 10px 12px 14px;
   overflow-wrap: anywhere;
   word-break: break-word;
+  /* Popup iframe is ~318px wide: never let content push it wider. */
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 /* Header */
@@ -198,26 +202,37 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-width: 0;
+  text-align: center;
   line-height: 1.2;
 }
 
 .day-name {
-  font-size: 15px;
+  max-width: 100%;
+  font-size: 14px;
   font-weight: 700;
   color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .day-date {
+  max-width: 100%;
   font-size: 11px;
   color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .day-arrow {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 50%;
@@ -227,8 +242,8 @@ body {
 }
 
 .day-arrow svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 
 .day-arrow:hover {
@@ -289,8 +304,9 @@ body {
 }
 
 .gear-icon {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
 }
 
 .settings-label {
