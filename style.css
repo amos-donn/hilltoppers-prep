@@ -51,13 +51,6 @@ body {
   margin-bottom: 10px;
 }
 
-.top-header h1 {
-  margin: 0;
-  font-size: 15px;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
 /* Buttons */
 .primary-btn {
   font: inherit;
@@ -177,13 +170,17 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* The date stays out of the way until you hover the day. */
-  visibility: hidden;
+  /* Collapsed until hover, so the day word sits centred between the arrows.
+     On hover the row grows: the day slides up, the date slides down into view. */
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 140ms ease, opacity 140ms ease;
 }
 
 .day-current:hover .day-date,
 .day-current:focus-within .day-date {
-  visibility: visible;
+  max-height: 16px;
+  opacity: 1;
 }
 
 .day-arrow {
@@ -256,9 +253,10 @@ body {
 /* Settings is just a gear; the word appears on hover/focus. */
 /* Just a bare gear - no box around the button. */
 .gear-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 0;
   padding: 0;
   border: 0;
   background: none;
@@ -278,15 +276,21 @@ body {
   flex: 0 0 auto;
 }
 
-/* No slide-out: the word simply appears beside the gear on hover/focus. */
+/* The word appears to the left of the gear on hover/focus. It is absolutely
+   positioned so the gear itself never shifts. */
 .settings-label {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  padding-right: 6px;
   display: none;
   white-space: nowrap;
 }
 
 .gear-btn:hover .settings-label,
 .gear-btn:focus-visible .settings-label {
-  display: inline;
+  display: block;
 }
 
 .settings input {

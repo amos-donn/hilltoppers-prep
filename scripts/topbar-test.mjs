@@ -43,12 +43,14 @@ await new Promise((r) => setTimeout(r, 20));
 /* --- the day switcher sits between the title and the gear --- */
 const header = document.querySelector(".top-header");
 assert(Boolean(header), "the header exists");
+assert(!document.querySelector(".top-header h1"), "the \"Today's Plan\" title is gone");
+assert(!/\.top-header h1/.test(CSS), "its now-unused CSS rule went with it");
 const order = header
   ? [...header.children].map((el) => el.tagName.toLowerCase() + (el.id ? "#" + el.id : ""))
   : [];
 assert(
-  order.join(",") === "h1,nav#day-nav,button#settings-toggle",
-  "header order is title, day switcher, settings (got " + order.join(",") + ")"
+  order.join(",") === "nav#day-nav,button#settings-toggle",
+  "header is the day switcher then settings (got " + order.join(",") + ")"
 );
 assert(
   document.getElementById("day-nav").parentElement === header,
@@ -108,14 +110,22 @@ assert(
   "the word does not slide out (no transition/opacity fade)"
 );
 assert(
-  /\.gear-btn:hover \.settings-label,[\s\S]*?display:\s*inline/.test(CSS),
+  /position:\s*absolute/.test(labelRule) && /right:\s*100%/.test(labelRule),
+  "the word is out of flow to the left, so the gear never shifts"
+);
+assert(
+  /\.gear-btn:hover \.settings-label,[\s\S]*?display:\s*block/.test(CSS),
   "hovering the gear shows the word Settings"
 );
 
 /* --- the date only surfaces when the day is hovered --- */
 const dateRule = (CSS.match(/\.day-date\s*\{([^}]*)\}/) || [])[1] || "";
-assert(/visibility:\s*hidden/.test(dateRule), "the date is out of sight by default");
-assert(/\.day-current:hover \.day-date/.test(CSS), "hovering the day reveals the date");
+assert(/max-height:\s*0/.test(dateRule), "the date is collapsed by default (day word stays centred)");
+assert(/transition:/.test(dateRule), "the date animates in and out");
+assert(
+  /\.day-current:hover \.day-date,[\s\S]*?max-height:\s*16px/.test(CSS),
+  "hovering the day slides the date down"
+);
 
 /* --- settings is closed until the gear is clicked --- */
 const settings = document.getElementById("settings");
