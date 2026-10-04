@@ -217,6 +217,54 @@ test("a refused origin gets a readable 403 (echoes the caller's origin)", async 
   assert.equal(upstreamCalls.length, 0, "nothing was proxied");
 });
 
+test("always sends a User-Agent upstream (Canvas/Cloudflare blocks UA-less requests)", async () => {
+  upstreamCalls = [];
+  await proxyGet("https://stjacademy.instructure.com/api/v1/courses", "https://amos-donn.github.io", {});
+  assert.match(
+    upstreamCalls[0].headers.get("user-agent") || "",
+    /HilltoppersPrep/,
+    "a default User-Agent is sent when the caller has none"
+  );
+
+  upstreamCalls = [];
+  await worker.fetch(
+    makeRequest("GET", "https://proxy.example/?url=" + encodeURIComponent("https://stjacademy.instructure.com/api"), {
+      Origin: "https://amos-donn.github.io",
+      "User-Agent": "Mozilla/5.0 (test-browser)",
+    }),
+    {}
+  );
+  assert.equal(
+    upstreamCalls[0].headers.get("user-agent"),
+    "Mozilla/5.0 (test-browser)",
+    "the caller's own User-Agent is forwarded"
+  );
+
+  upstreamCalls = [];
+  await proxyGet("https://stjacademy.instructure.com/api", "https://amos-donn.github.io", {
+    UPSTREAM_USER_AGENT: "CustomAgent/9",
+  });
+  assert.equal(
+    upstreamCalls[0].headers.get("user-agent"),
+    "CustomAgent/9",
+    "UPSTREAM_USER_AGENT overrides both"
+  );
+});
+
+test("forwards accept-language, still never forwards the caller's cookies", async () => {
+  upstreamCalls = [];
+  await worker.fetch(
+    makeRequest("GET", "https://proxy.example/?url=" + encodeURIComponent("https://stjacademy.instructure.com/api"), {
+      Origin: "https://amos-donn.github.io",
+      "Accept-Language": "en-US,en;q=0.9",
+      Cookie: "canvas_session=secret",
+    }),
+    {}
+  );
+  assert.equal(upstreamCalls[0].headers.get("accept-language"), "en-US,en;q=0.9");
+  assert.equal(upstreamCalls[0].headers.get("cookie"), null, "cookies are not forwarded");
+});
+
 test("a refused target host names the host and the allowed list", async () => {
   upstreamCalls = [];
   const res = await proxyGet("https://evil.example.com/api", "https://amos-donn.github.io", {

@@ -213,6 +213,35 @@ const planHtml =
   );
 }
 
+/* ---------- 7) upstream HTML block page (Canvas/Cloudflare WAF), not a token error ---------- */
+{
+  const blockPage =
+    '<!DOCTYPE html><html lang="en"><head><title>Not Authorized</title></head>' +
+    '<body><h2>Not Authorized</h2><p>You are not authorized to access this site because ' +
+    'you have not provided valid credentials.</p></body></html>';
+  const { window } = await boot(async () =>
+    new Response(blockPage, { status: 403, headers: { "Content-Type": "text/html" } })
+  );
+  await settle(window, "[err-6]");
+
+  const text = bodyText(window);
+  assert(text.includes("[err-6]"), "an HTML 403 renders err-6");
+  assert(
+    text.includes("blocked upstream (HTTP 403)"),
+    "an HTML 403 is labelled as an upstream block, not a token problem"
+  );
+  assert(text.includes("HTML page, not the Canvas API"), "the block page is identified as HTML");
+  assert(text.includes("Not Authorized"), "the block page's own title is shown");
+  assert(
+    !text.includes("Canvas rejected the token"),
+    "an HTML block page is NOT reported as a rejected token"
+  );
+  assert(
+    !text.includes("<!DOCTYPE") && !text.includes("<h2>"),
+    "raw HTML markup is stripped from the message"
+  );
+}
+
 console.log(
   results.every((r) => r.ok)
     ? "E2E OK — all assertions passed"

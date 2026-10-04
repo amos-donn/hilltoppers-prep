@@ -24,7 +24,15 @@
  *                        *.instructure.com                       stripped)
  *   ALLOW_INSECURE     set to "1" only for local testing (permits http://
  *                      targets on 127.0.0.1/localhost).
+ *   UPSTREAM_USER_AGENT  optional. Canvas sits behind Cloudflare, which answers
+ *                      requests with no User-Agent with an HTML 403 block page
+ *                      instead of the API. The caller's own User-Agent is
+ *                      forwarded when present; this overrides the built-in
+ *                      default for every request.
  */
+
+const DEFAULT_USER_AGENT =
+  "HilltoppersPrep/1.0 (+https://amos-donn.github.io/hilltoppers-prep/)";
 
 const BLOCKED_HOSTS =
   /(^|\.)(localhost|local|internal|intranet)$|^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.|\[?::1\]?$)/i;
@@ -81,10 +89,25 @@ export default {
     }
 
     const headers = new Headers();
-    for (const name of ["authorization", "accept", "content-type", "x-csrf-token"]) {
+    for (const name of [
+      "authorization",
+      "accept",
+      "accept-language",
+      "content-type",
+      "x-csrf-token",
+    ]) {
       const value = request.headers.get(name);
       if (value) headers.set(name, value);
     }
+    /* Always send a User-Agent: a UA-less request to Canvas (fronted by
+       Cloudflare) gets an HTML 403 "Not Authorized" block page instead of the
+       API. Use an explicit override, else the caller's own UA, else a default. */
+    headers.set(
+      "user-agent",
+      (env && env.UPSTREAM_USER_AGENT) ||
+        request.headers.get("user-agent") ||
+        DEFAULT_USER_AGENT
+    );
     if (!headers.has("accept")) headers.set("accept", "application/json");
 
     const hasBody = request.method !== "GET" && request.method !== "HEAD";
