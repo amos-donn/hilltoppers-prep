@@ -1,18 +1,27 @@
-/* Hiltoppers Canvas CORS proxy — Cloudflare Worker.
+/* Hilltoppers Canvas CORS proxy — Cloudflare Worker.
  *
  * Transparent passthrough: the caller's own Canvas token travels in the
  * Authorization header on every request and is NEVER stored, logged, or
- * rewritten here. Deploy once, paste the worker URL into the topping's
- * Settings, done.
+ * rewritten here.
  *
  * Usage:  GET https://<worker>/?url=<URL-encoded absolute Canvas URL>
- * The target host must end with an allowed suffix (default: instructure.com).
- * Configure via Worker env vars:
+ * Configure via Worker env vars — entries are normalized, so both the bare
+ * form and the copy-pasted-from-the-browser form work:
+ *
  *   ALLOWED_ORIGINS    comma-separated origins allowed to call the proxy.
- *                      "*" (default) allows any. Example:
- *                      https://amos-donn.github.io,chrome-extension://<id>
- *   ALLOWED_SUFFIXES   comma-separated target host suffixes.
- *                      Default: instructure.com
+ *                      "*" (default) allows any.
+ *                      All of these are accepted and mean the same thing:
+ *                        https://amos-donn.github.io
+ *                        https://amos-donn.github.io/
+ *                        https://amos-donn.github.io/hilltoppers-prep/
+ *                        https://*.github.io          (wildcard subdomain)
+ *                        chrome-extension://<id>
+ *                        null                          (sandboxed iframe)
+ *   ALLOWED_SUFFIXES   comma-separated target host suffixes. Default:
+ *                      instructure.com. Both forms work:
+ *                        instructure.com
+ *                        https://stjacademy.instructure.com/    (path/scheme
+ *                        *.instructure.com                       stripped)
  *   ALLOW_INSECURE     set to "1" only for local testing (permits http://
  *                      targets on 127.0.0.1/localhost).
  */
@@ -25,10 +34,14 @@ export default {
     const origin = request.headers.get("Origin") || "";
     const corsOrigin = resolveCorsOrigin(origin, env && env.ALLOWED_ORIGINS);
     if (request.method === "OPTIONS") {
-      return preflight(corsOrigin);
+      return preflight(corsOrigin, origin);
     }
     if (!corsOrigin && origin) {
-      return json({ error: "Origin not allowed" }, 403, "");
+      /* Deliberately readable: the request is refused before anything is
+         proxied, so echoing the caller's own origin back costs nothing and
+         lets the topping show *why* it was blocked instead of an opaque
+         "Failed to fetch". */
+      return json({ error: "Origin not allowed", origin: origin }, 403, origin);
     }
 
     const target = new URL(request.url).searchParams.get("url");
@@ -51,15 +64,19 @@ export default {
       return json({ error: "Only https targets are allowed" }, 400, corsOrigin);
     }
     if (!isLocalHttp) {
-      const suffixes = splitList((env && env.ALLOWED_SUFFIXES) || "instructure.com");
+      const suffixes = splitList(env && env.ALLOWED_SUFFIXES, "instructure.com");
       if (!suffixes.some((s) => host === s || host.endsWith("." + s))) {
-        return json({ error: "Target host not allowed" }, 403, corsOrigin);
+        return json(
+          { error: "Target host not allowed", host: host, allowed: suffixes },
+          403,
+          corsOrigin
+        );
       }
       if (targetUrl.protocol !== "https:") {
         return json({ error: "Unsupported protocol" }, 400, corsOrigin);
       }
       if (BLOCKED_HOSTS.test(host)) {
-        return json({ error: "Target host not allowed" }, 403, corsOrigin);
+        return json({ error: "Target host not allowed", host: host }, 403, corsOrigin);
       }
     }
 
@@ -93,24 +110,83 @@ export default {
   },
 };
 
-function splitList(value) {
-  return String(value)
+function splitList(value, fallback) {
+  const raw = value === undefined || value === null || String(value).trim() === ""
+    ? fallback
+    : value;
+  return String(raw)
     .split(",")
-    .map((s) => s.trim().replace(/^\*\./, "").toLowerCase())
+    .map(normalizeSuffix)
     .filter(Boolean);
 }
 
-function resolveCorsOrigin(origin, allowedOrigins) {
-  const list = splitList(allowedOrigins === undefined || allowedOrigins === "" ? "*" : allowedOrigins);
-  if (list.includes("*")) return origin || "*";
-  return list.includes(origin.toLowerCase()) ? origin : "";
+/* Accept "instructure.com", ".instructure.com", "*.instructure.com",
+   "https://stjacademy.instructure.com/", "canvas.edu:443" — all become
+   "instructure.com" / "stjacademy.instructure.com" / "canvas.edu". */
+function normalizeSuffix(value) {
+  let s = String(value).trim().toLowerCase();
+  if (!s) return "";
+  s = s.replace(/^\*\./, "").replace(/^\./, "");
+  if (/^[a-z][a-z0-9+.-]*:\/\//.test(s)) {
+    try {
+      s = new URL(s).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  }
+  return s.split("/")[0].replace(/:\d+$/, "");
 }
 
-function preflight(corsOrigin) {
+/* Accept "https://site.github.io", "https://site.github.io/", "https://site.github.io/app/",
+   "https://*.github.io", "chrome-extension://<id>", "*", "null" — all become a
+   comparable origin pattern. */
+function normalizeOrigin(value) {
+  let s = String(value).trim().toLowerCase();
+  if (!s) return "";
+  if (s === "*" || s === "null") return s;
+  if (/^[a-z][a-z0-9+.-]*:\/\//.test(s)) {
+    try {
+      s = new URL(s).origin.toLowerCase();
+    } catch {
+      return "";
+    }
+  }
+  return s.replace(/\/+$/, "");
+}
+
+function resolveCorsOrigin(origin, allowedOrigins) {
+  const raw =
+    allowedOrigins === undefined || allowedOrigins === null || String(allowedOrigins).trim() === ""
+      ? "*"
+      : allowedOrigins;
+  const list = String(raw).split(",").map(normalizeOrigin).filter(Boolean);
+  if (list.includes("*")) return origin || "*";
+
+  const o = String(origin || "").toLowerCase();
+  if (!o) return ""; /* non-browser caller — no CORS headers needed */
+  if (o === "null") return list.includes("null") ? "null" : "";
+
+  for (const entry of list) {
+    if (entry === o) return origin;
+    if (entry.includes("*")) {
+      const rx = new RegExp(
+        "^" + entry.split("*").map(escapeRegExp).join(".*") + "$"
+      );
+      if (rx.test(o)) return origin;
+    }
+  }
+  return "";
+}
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function preflight(corsOrigin, origin) {
   return new Response(null, {
     status: 204,
     headers: {
-      "Access-Control-Allow-Origin": corsOrigin || "*",
+      "Access-Control-Allow-Origin": corsOrigin || origin || "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, X-CSRF-Token",
       "Access-Control-Max-Age": "86400",
@@ -120,7 +196,7 @@ function preflight(corsOrigin) {
 }
 
 function json(body, status, corsOrigin) {
-  const headers = { "Content-Type": "application/json" };
+  const headers = { "Content-Type": "application/json", Vary: "Origin" };
   if (corsOrigin) headers["Access-Control-Allow-Origin"] = corsOrigin;
   return new Response(JSON.stringify(body), { status, headers });
 }

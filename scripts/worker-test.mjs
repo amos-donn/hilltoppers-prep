@@ -138,3 +138,93 @@ test("missing url parameter returns 400", async () => {
   const res = await worker.fetch(makeRequest("GET", "https://proxy.example/", { Origin: "https://amos-donn.github.io" }), {});
   assert.equal(res.status, 400);
 });
+
+/* --- env values are normalized, so the copy-pasted-from-the-browser form works --- */
+
+function proxyGet(targetUrl, origin, env) {
+  return worker.fetch(
+    makeRequest("GET", "https://proxy.example/?url=" + encodeURIComponent(targetUrl), {
+      Origin: origin,
+    }),
+    env
+  );
+}
+
+test("ALLOWED_SUFFIXES accepts a full URL / path / wildcard / port", async () => {
+  upstreamCalls = [];
+  const urlForm = await proxyGet(
+    "https://stjacademy.instructure.com/api/v1/courses",
+    "https://amos-donn.github.io",
+    { ALLOWED_SUFFIXES: "https://stjacademy.instructure.com/" }
+  );
+  assert.equal(urlForm.status, 200, "full URL form should match");
+
+  const wildcard = await proxyGet(
+    "https://foo.instructure.com/api",
+    "https://amos-donn.github.io",
+    { ALLOWED_SUFFIXES: "*.instructure.com" }
+  );
+  assert.equal(wildcard.status, 200, "wildcard form should match");
+
+  const withPort = await proxyGet(
+    "https://canvas.myschool.edu/api",
+    "https://amos-donn.github.io",
+    { ALLOWED_SUFFIXES: "myschool.edu:443" }
+  );
+  assert.equal(withPort.status, 200, "host:port form should match");
+});
+
+test("ALLOWED_ORIGINS accepts trailing slash, path, wildcard and null", async () => {
+  upstreamCalls = [];
+  const target = "https://stjacademy.instructure.com/api/v1/courses";
+
+  const slash = await proxyGet(target, "https://amos-donn.github.io", {
+    ALLOWED_ORIGINS: "https://amos-donn.github.io/",
+  });
+  assert.equal(slash.status, 200, "trailing slash should match");
+
+  const withPath = await proxyGet(target, "https://amos-donn.github.io", {
+    ALLOWED_ORIGINS: "https://amos-donn.github.io/hilltoppers-prep/",
+  });
+  assert.equal(withPath.status, 200, "a pasted page URL should be reduced to its origin");
+
+  const wild = await proxyGet(target, "https://someone.github.io", {
+    ALLOWED_ORIGINS: "https://*.github.io",
+  });
+  assert.equal(wild.status, 200, "wildcard origin should match a subdomain");
+
+  const nullOrigin = await proxyGet(target, "null", { ALLOWED_ORIGINS: "null" });
+  assert.equal(nullOrigin.status, 200, "'null' origin should be allowed when listed");
+});
+
+test("a refused origin gets a readable 403 (echoes the caller's origin)", async () => {
+  upstreamCalls = [];
+  const res = await worker.fetch(
+    makeRequest("GET", "https://proxy.example/?url=" + encodeURIComponent("https://school.instructure.com/api"), {
+      Origin: "https://attacker.example",
+    }),
+    { ALLOWED_ORIGINS: "https://amos-donn.github.io" }
+  );
+  assert.equal(res.status, 403);
+  assert.equal(
+    res.headers.get("Access-Control-Allow-Origin"),
+    "https://attacker.example",
+    "origin echoed so the caller can read the reason"
+  );
+  const body = await res.json();
+  assert.equal(body.error, "Origin not allowed");
+  assert.equal(body.origin, "https://attacker.example");
+  assert.equal(upstreamCalls.length, 0, "nothing was proxied");
+});
+
+test("a refused target host names the host and the allowed list", async () => {
+  upstreamCalls = [];
+  const res = await proxyGet("https://evil.example.com/api", "https://amos-donn.github.io", {
+    ALLOWED_SUFFIXES: "instructure.com",
+  });
+  assert.equal(res.status, 403);
+  const body = await res.json();
+  assert.equal(body.error, "Target host not allowed");
+  assert.equal(body.host, "evil.example.com");
+  assert.deepEqual(body.allowed, ["instructure.com"]);
+});
