@@ -22,6 +22,29 @@
 
   var els = {};
 
+  /* Look-ahead state: which day is being viewed (0 = today) and the calendar
+     pages already fetched for the current classes. */
+  var LOOKAHEAD_DAYS = 4;
+  var dayOffset = 0;
+  var cards = [];
+  var planCache = {};
+
+  var WEEKDAY_NAMES = [
+    "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+  ];
+  var WEEKDAY_ABBR = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+  function shortWeekday(date) {
+    var a = WEEKDAY_ABBR[date.getDay()];
+    return a.charAt(0).toUpperCase() + a.slice(1);
+  }
+
+  /* "10/4" — the canonical date form used for comparisons between the
+     calendar's spelling of a date and the day being displayed. */
+  function shortKey(date) {
+    return date.getMonth() + 1 + "/" + date.getDate();
+  }
+
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
@@ -30,6 +53,7 @@
     els.save = document.getElementById("save-settings");
     els.status = document.getElementById("settings-status");
     els.classes = document.getElementById("classes");
+    els.dayBar = document.getElementById("day-bar");
     els.settings = document.getElementById("settings");
     els.toggle = document.getElementById("settings-toggle");
 
@@ -38,6 +62,7 @@
 
     els.save.addEventListener("click", onSave);
     els.toggle.addEventListener("click", onToggle);
+    if (els.dayBar) els.dayBar.addEventListener("click", onDayClick);
 
     if (els.token.value.trim()) {
       refresh();
@@ -304,9 +329,12 @@
     var token = currentToken();
     els.classes.textContent = "";
     els.latestDiag = null;
+    cards = [];
+    planCache = {};
 
     if (!token) {
-      els.classes.appendChild(hint("Add your Canvas API token above to load today's plan for each class."));
+      if (els.dayBar) els.dayBar.textContent = "";
+      els.classes.appendChild(hint("Add your Canvas API token above to load the plan for each class."));
       return;
     }
 
@@ -335,32 +363,97 @@
   function renderCourseCards(courses) {
     els.classes.textContent = "";
     els.latestDiag = null;
+    cards = [];
     courses.forEach(function (course) {
       var card = makeCard(course.name || "Untitled class");
       els.classes.appendChild(card.sec);
-      loadCoursePlan(course)
-        .then(function (plan) {
-          renderPlan(card.body, plan);
+      cards.push({ course: course, card: card });
+    });
+    renderPlans();
+
+    /* Fetch each class's calendar page once; changing the selected day then
+       re-renders from this cache without hitting Canvas again. */
+    cards.forEach(function (entry) {
+      findPlanPage(entry.course.id)
+        .then(function (page) {
+          planCache[entry.course.id] = page || null;
+          renderPlans();
         })
         .catch(function (err) {
-          var target = currentBase() + "/api/v1/courses/" + course.id + "/front_page";
-          var diag = classifyFetchError(err, target, true);
-          renderState(card.body, errorStatusText(diag), "is-error");
+          planCache[entry.course.id] = { error: err };
+          renderPlans();
         });
     });
   }
 
-  function loadCoursePlan(course) {
-    return findPlanPage(course.id).then(function (page) {
-      if (!page) return { kind: "empty" };
-      var lines = extractTodayLines(page.body);
-      if (!lines.length) {
-        /* A live Google Sheets/iframe embed is invisible to the Canvas API —
-           only text typed into a Canvas page itself is readable. */
-        if (/<iframe[\s>]/i.test(page.body)) return { kind: "embed" };
-        return { kind: "empty" };
+  /* Which day is being shown: today + dayOffset (the look-ahead chips). */
+  function targetDate() {
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + dayOffset);
+    return d;
+  }
+
+  function dayLabelFor(date) {
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var diff = Math.round((date - today) / 86400000);
+    var same = shortWeekday(date) + " " + shortKey(date);
+    if (diff === 0) return "Today, " + same;
+    if (diff === 1) return "Tomorrow, " + same;
+    return WEEKDAY_NAMES[date.getDay()] + ", " + same;
+  }
+
+  function renderDayBar() {
+    if (!els.dayBar) return;
+    els.dayBar.textContent = "";
+    var base = new Date();
+    base.setHours(0, 0, 0, 0);
+    for (var i = 0; i <= LOOKAHEAD_DAYS; i++) {
+      var d = new Date(base);
+      d.setDate(d.getDate() + i);
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "day-chip" + (i === dayOffset ? " is-active" : "");
+      btn.setAttribute("data-offset", String(i));
+      btn.setAttribute("aria-pressed", i === dayOffset ? "true" : "false");
+      btn.textContent = i === 0 ? "Today" : shortWeekday(d) + " " + shortKey(d);
+      els.dayBar.appendChild(btn);
+    }
+  }
+
+  function onDayClick(event) {
+    var target = event.target;
+    var btn = target && target.closest ? target.closest("[data-offset]") : null;
+    if (!btn) return;
+    var next = parseInt(btn.getAttribute("data-offset"), 10);
+    if (isNaN(next) || next === dayOffset) return;
+    dayOffset = next;
+    renderPlans();
+  }
+
+  function renderPlans() {
+    renderDayBar();
+    var date = targetDate();
+    cards.forEach(function (entry) {
+      var cached = planCache[entry.course.id];
+      if (cached === undefined) {
+        renderState(entry.card.body, "Loading…", "");
+        return;
       }
-      return { kind: "plan", lines: lines, sourceTitle: page.title };
+      if (cached && cached.error) {
+        var target = currentBase() + "/api/v1/courses/" + entry.course.id + "/front_page";
+        var diag = classifyFetchError(cached.error, target, true);
+        renderState(entry.card.body, errorStatusText(diag), "is-error");
+        return;
+      }
+      if (!cached) {
+        renderState(entry.card.body, "No plan page found for this class.", "is-empty");
+        return;
+      }
+      var plan = planForDate(cached.body, date);
+      plan.sourceTitle = cached.title;
+      renderPlan(entry.card.body, plan, date);
     });
   }
 
@@ -397,7 +490,11 @@
   /* ---------- "Today" extraction from the spreadsheet ---------- */
 
   function todayKeys() {
-    var now = new Date();
+    return dateKeysFor(new Date());
+  }
+
+  /* Every spelling a spreadsheet might use for one specific date. */
+  function dateKeysFor(now) {
     var monthsShort = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
     var monthsLong = [
       "january", "february", "march", "april", "may", "june",
@@ -442,11 +539,112 @@
     return cleanText(text).toLowerCase().replace(/[:.,]+$/, "");
   }
 
-  function extractTodayLines(html) {
-    if (!html) return [];
+  /* ---------- Weekday-labelled calendars ----------
+
+     The two common shapes are a header row of day names (Monday..Friday,
+     sometimes each carrying its own date like "Monday 9/28") with the plan
+     stacked in the rows below, and the same thing rotated: day names down the
+     first column with the plan in the rest of the row. */
+
+  function weekdayOf(text) {
+    var t = normalizeCell(text);
+    if (!t) return -1;
+    for (var i = 0; i < 7; i++) {
+      if (new RegExp("^(" + WEEKDAY_NAMES[i].toLowerCase() + "|" + WEEKDAY_ABBR[i] + ")\\b").test(t)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /* First m/d (or yyyy-mm-dd) in a cell, canonicalised to "m/d". */
+  function firstDateKey(text) {
+    var s = String(text || "");
+    var iso = s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+    if (iso) return Number(iso[2]) + "/" + Number(iso[3]);
+    var m = s.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{2,4}))?\b/);
+    if (m) return Number(m[1]) + "/" + Number(m[2]);
+    return "";
+  }
+
+  function headerWeekdayRow(rows) {
+    var limit = Math.min(rows.length, 5);
+    for (var r = 0; r < limit; r++) {
+      var cells = Array.prototype.slice.call(rows[r].children);
+      var cols = {};
+      var count = 0;
+      var firstWeekday = -1;
+      for (var c = 0; c < cells.length; c++) {
+        var wd = weekdayOf(cleanText(cells[c].textContent));
+        if (wd < 0) continue;
+        if (firstWeekday < 0) firstWeekday = c;
+        if (cols[wd] != null) continue;
+        cols[wd] = c;
+        count++;
+      }
+      if (count < 3) continue;
+      /* Sheets often label the rows down the left (FOCUS, HOMEWORK, "Week 6"),
+         so the header row carries one extra label cell. When it does not, the
+         day columns sit one to the right of the cells the rows use. */
+      var dataCols = 0;
+      for (var j = r + 1; j < rows.length; j++) {
+        dataCols = Math.max(dataCols, rows[j].children.length);
+      }
+      if (firstWeekday === 0 && dataCols === cells.length + 1) {
+        Object.keys(cols).forEach(function (k) {
+          cols[k] += 1;
+        });
+      }
+      return { row: r, cols: cols };
+    }
+    return null;
+  }
+
+  function headerWeekdayColumn(rows) {
+    for (var c = 0; c < 2; c++) {
+      var rowIndex = {};
+      var count = 0;
+      var limit = Math.min(rows.length, 14);
+      for (var r = 0; r < limit; r++) {
+        var cells = rows[r].children;
+        if (!cells[c]) continue;
+        var wd = weekdayOf(cleanText(cells[c].textContent));
+        if (wd < 0 || rowIndex[wd] != null) continue;
+        rowIndex[wd] = r;
+        count++;
+      }
+      if (count >= 3) return { col: c, rows: rowIndex };
+    }
+    return null;
+  }
+
+  /* Row mode: the day sits in the first cell, the plan in the rest of the row. */
+  function weekdayRowLines(rows, rowIndex) {
+    var cells = Array.prototype.slice.call(rows[rowIndex].children);
+    var out = [];
+    cells.forEach(function (cell, idx) {
+      var text = cleanText(cell.textContent);
+      if (!text) return;
+      if (idx === 0) {
+        var rest = text.replace(/^[a-z]+\b\.?/i, "").replace(/^[\s\-–—:;,]+/, "").trim();
+        if (rest) out.push(rest);
+        return;
+      }
+      if (looksLikeDate(text)) return;
+      out.push(text);
+    });
+    return out.filter(function (line, i) {
+      return out.indexOf(line) === i;
+    });
+  }
+
+  /* The plan for one specific day (row-mode date, column-mode date, or a
+     weekday-labelled calendar). */
+  function planForDate(html, date) {
+    if (!html) return { kind: "empty" };
     var doc = new DOMParser().parseFromString(html, "text/html");
     // Longest keys first so "october 3" is stripped before "oct 3".
-    var keys = todayKeys().slice().sort(function (a, b) {
+    var keys = dateKeysFor(date).slice().sort(function (a, b) {
       return b.length - a.length;
     });
     var patterns = keys.map(function (k) {
@@ -454,11 +652,62 @@
     });
 
     var tables = doc.querySelectorAll("table");
+    var sawWeekdayCalendar = false;
+    var calendarDates = [];
+    var targetWeekday = date.getDay();
+    var wantKey = shortKey(date);
+
     for (var t = 0; t < tables.length; t++) {
-      var lines = matchTable(tables[t], patterns, keys);
-      if (lines.length) return lines;
+      var rows = Array.prototype.slice.call(tables[t].querySelectorAll("tr"));
+      if (!rows.length) continue;
+
+      /* 1) An explicit date match — exact, so prefer it. */
+      var lines = matchTable(rows, patterns, keys);
+      if (lines.length) return { kind: "plan", lines: lines };
+
+      /* 2) A weekday header row: Monday..Friday across the top. */
+      var headerRow = headerWeekdayRow(rows);
+      if (headerRow) {
+        sawWeekdayCalendar = true;
+        var headCells = rows[headerRow.row].children;
+        for (var wd = 0; wd < 7; wd++) {
+          var hc = headerRow.cols[wd];
+          if (hc == null || !headCells[hc]) continue;
+          var hd = firstDateKey(cleanText(headCells[hc].textContent));
+          if (hd && calendarDates.indexOf(hd) === -1) calendarDates.push(hd);
+        }
+        var col = headerRow.cols[targetWeekday];
+        if (col != null) {
+          var headCell = headCells[col];
+          var cellDate = headCell ? firstDateKey(cleanText(headCell.textContent)) : "";
+          if (!cellDate || cellDate === wantKey) {
+            var colLines = columnLines(rows, col, headerRow.row + 1);
+            if (colLines.length) return { kind: "plan", lines: colLines, byWeekday: true };
+          }
+        }
+      }
+
+      /* 3) Weekday names down the first column. */
+      var headerCol = headerWeekdayColumn(rows);
+      if (headerCol) {
+        sawWeekdayCalendar = true;
+        var rowIdx = headerCol.rows[targetWeekday];
+        if (rowIdx != null) {
+          var firstCell = rows[rowIdx].children[headerCol.col];
+          var rowDate = firstCell ? firstDateKey(cleanText(firstCell.textContent)) : "";
+          if (!rowDate || rowDate === wantKey) {
+            var rowLines = weekdayRowLines(rows, rowIdx);
+            if (rowLines.length) return { kind: "plan", lines: rowLines, byWeekday: true };
+          }
+        }
+      }
     }
-    return [];
+
+    /* A live Google Sheets/iframe embed is invisible to the Canvas API —
+       only text typed into a Canvas page itself is readable. */
+    if (/<iframe[\s>]/i.test(html)) return { kind: "embed" };
+    if (sawWeekdayCalendar) return { kind: "noDay", dates: calendarDates };
+    return { kind: "empty" };
   }
 
   /* Generic "looks like a date" test — used to tell day cells apart from
@@ -484,15 +733,16 @@
     return "";
   }
 
-  function columnLines(rows, col) {
+  function columnLines(rows, col, fromRow) {
     var lines = [];
+    var start = fromRow == null ? 1 : fromRow;
     /* Prefix labels only when the first column is a real label column
        (vertical day-lists). If the header row's first cell is a date, the
        first column is another day — its cells are not labels. */
     var headerFirst =
       rows[0] && rows[0].children[0] ? cleanText(rows[0].children[0].textContent) : "";
     var labelIsDate = looksLikeDate(headerFirst);
-    for (var i = 1; i < rows.length; i++) {
+    for (var i = start; i < rows.length; i++) {
       var rowCells = Array.prototype.slice.call(rows[i].children);
       var value = rowCells[col] ? cleanText(rowCells[col].textContent) : "";
       if (!value || looksLikeDate(value)) continue;
@@ -504,8 +754,7 @@
     return lines;
   }
 
-  function matchTable(table, patterns, keys) {
-    var rows = Array.prototype.slice.call(table.querySelectorAll("tr"));
+  function matchTable(rows, patterns, keys) {
     if (!rows.length) return [];
 
     var hit = null;
@@ -612,27 +861,37 @@
     body.appendChild(p);
   }
 
-  function renderPlan(body, plan) {
+  function renderPlan(body, plan, date) {
+    var day = date || new Date();
     if (plan.kind === "empty") {
-      renderState(body, "No plan found for today.", "is-empty");
+      renderState(body, "No plan found for " + dayLabelFor(day) + ".", "is-empty");
+      return;
+    }
+    if (plan.kind === "noDay") {
+      var covers = plan.dates && plan.dates.length
+        ? " (its dates cover " + plan.dates.slice(0, 6).join(", ") + ")"
+        : " (it has no dates)";
+      renderState(
+        body,
+        "This class's calendar has no " + WEEKDAY_NAMES[day.getDay()] + " entry" + covers + ".",
+        "is-empty"
+      );
       return;
     }
     if (plan.kind === "embed") {
       renderState(
         body,
-        "This homepage embeds an external sheet (Google Sheets, etc.) that the Canvas API can't read, so today's plan can't be extracted.",
+        "This homepage embeds an external sheet (Google Sheets, etc.) that the Canvas API can't read, so the plan can't be extracted.",
         "is-empty"
       );
       return;
     }
     body.textContent = "";
 
-    if (plan.sourceTitle) {
-      var note = document.createElement("p");
-      note.className = "page-note";
-      note.textContent = plan.sourceTitle;
-      body.appendChild(note);
-    }
+    var note = document.createElement("p");
+    note.className = "page-note";
+    note.textContent = dayLabelFor(day) + (plan.sourceTitle ? " · " + plan.sourceTitle : "");
+    body.appendChild(note);
 
     var ul = document.createElement("ul");
     ul.className = "plan-list";

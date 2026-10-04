@@ -68,7 +68,7 @@ const CASES = [
     html:
       "<table><tr><th>10/2</th><th>10/6</th></tr>" +
       "<tr><td>Reading</td><td>Essay draft</td></tr></table>",
-    expect: ["No plan found for today."],
+    expect: ["No plan found for"],
     reject: ["Reading", "Essay draft"],
   },
   {
@@ -114,6 +114,56 @@ for (const c of CASES) {
   c.expect = c.expect.map(sub);
   c.reject = c.reject.map(sub);
 }
+
+/* Real-world weekday-header shapes, generated from the actual current week so
+   they stay correct on any day of the week. */
+const WEEKDAY_NAMES = [
+  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+];
+const weekStart = (() => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Monday of this week
+  return d;
+})();
+const dayAt = (i) => {
+  const d = new Date(weekStart);
+  d.setDate(d.getDate() + i);
+  return d;
+};
+const withDate = (i) =>
+  WEEKDAY_NAMES[dayAt(i).getDay()] + " " + (dayAt(i).getMonth() + 1) + "/" + dayAt(i).getDate();
+const todayIndex = (new Date().getDay() + 6) % 7; // 0 = Monday
+const cols = (fn) => [0, 1, 2, 3, 4, 5, 6].map((i) => "<td>" + fn(i) + "</td>").join("");
+const heads = (fn) => [0, 1, 2, 3, 4, 5, 6].map((i) => "<th>" + fn(i) + "</th>").join("");
+
+CASES.push({
+  name: "weekdayHeaderWithDates (Week 6 / Monday 9/28 / Tuesday 9/29 columns)",
+  html:
+    "<table><tr><th>Week 6</th>" +
+    heads(withDate) +
+    "</tr><tr><td>Concepts</td>" +
+    cols((i) => (i === todayIndex ? "Linear Inequalities" : "Other topic")) +
+    "</tr><tr><td>Homework</td>" +
+    cols((i) => (i === todayIndex ? "HW 2.10" : "Other HW")) +
+    "</tr></table>",
+  expect: ["Linear Inequalities", "HW 2.10"],
+  reject: ["Other topic", "Other HW"],
+});
+
+CASES.push({
+  name: "weekdayHeaderNoDates (Monday..Friday columns, no dates anywhere)",
+  html:
+    "<table><tr>" +
+    heads((i) => WEEKDAY_NAMES[dayAt(i).getDay()]) +
+    "</tr><tr><td>FOCUS</td>" +
+    cols((i) => (i === todayIndex ? "Kallipolis / Justice" : "Other focus")) +
+    "</tr><tr><td>HOMEWORK</td>" +
+    cols((i) => (i === todayIndex ? "Watch this video" : "Other homework")) +
+    "</tr></table>",
+  expect: ["Kallipolis / Justice", "Watch this video"],
+  reject: ["Other focus", "Other homework"],
+});
 
 let failures = 0;
 
