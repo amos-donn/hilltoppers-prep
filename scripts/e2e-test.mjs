@@ -167,6 +167,52 @@ const planHtml =
   assert(text.includes("relay returned non-JSON"), "err-5 explains the non-JSON body");
 }
 
+/* ---------- 5) relay refuses the target host (ALLOWED_SUFFIXES) ---------- */
+{
+  const { window } = await boot(async () =>
+    new Response(
+      JSON.stringify({
+        error: "Target host not allowed",
+        host: "stjacademy.instructure.com",
+        allowed: ["instructure.com"],
+      }),
+      { status: 403 }
+    )
+  );
+  await settle(window, "[err-7]");
+
+  const text = bodyText(window);
+  assert(text.includes("[err-7]"), "a relay refusal renders err-7");
+  assert(
+    text.includes("relay refused the request: Target host not allowed"),
+    "err-7 names the relay's own refusal"
+  );
+  assert(text.includes("ALLOWED_SUFFIXES"), "err-7 points at ALLOWED_SUFFIXES to fix");
+  assert(text.includes("relay allows: instructure.com"), "err-7 lists what the relay does allow");
+  assert(
+    !text.includes("Canvas rejected the token"),
+    "a relay refusal is NOT reported as a token problem"
+  );
+}
+
+/* ---------- 6) relay refuses this page's origin (ALLOWED_ORIGINS) ---------- */
+{
+  const { window } = await boot(async () =>
+    new Response(
+      JSON.stringify({ error: "Origin not allowed", origin: "https://example.test" }),
+      { status: 403 }
+    )
+  );
+  await settle(window, "[err-7]");
+
+  const text = bodyText(window);
+  assert(text.includes("relay refused the request: Origin not allowed"), "origin refusal is named");
+  assert(
+    text.includes("add https://example.test to ALLOWED_ORIGINS"),
+    "origin refusal shows the exact origin to allow"
+  );
+}
+
 console.log(
   results.every((r) => r.ok)
     ? "E2E OK — all assertions passed"

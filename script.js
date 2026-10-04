@@ -110,6 +110,22 @@
     var relayHost = relay.replace(/^https?:\/\//, "").split("/")[0];
     var server = serverMessage(err);
 
+    // 0) The relay's own refusal — name the env var to fix, don't blame the token.
+    var refusal = relayRefusal(err);
+    if (refusal) {
+      var tip = /origin/i.test(refusal.error)
+        ? " — add " + (refusal.origin || "this page's origin") + " to ALLOWED_ORIGINS"
+        : /host|suffix/i.test(refusal.error)
+          ? " — add " + (refusal.domain || "the Canvas domain") + " to ALLOWED_SUFFIXES"
+          : "";
+      return {
+        code: 7,
+        label: "relay refused the request: " + refusal.error + tip,
+        detail: refusal.allowed ? "relay allows: " + refusal.allowed : "",
+        relay: relayHost,
+      };
+    }
+
     // 1) A 2xx body that was not JSON (check before the status branch: the
     //    parse error carries the response status, which can be 200).
     if (/^ParseError$/i.test(name)) {
@@ -190,6 +206,25 @@
       if (json && json.error) return String(json.error).slice(0, 200);
     } catch (e) {}
     return String(body).replace(/\s+/g, " ").trim().slice(0, 180);
+  }
+
+  /* The relay's own error shape ({"error": "...", ...}) — distinct from a
+     Canvas error body, which uses message/errors. */
+  function relayRefusal(err) {
+    var body = err && err.body;
+    if (!body) return null;
+    try {
+      var json = JSON.parse(body);
+      if (json && typeof json.error === "string" && !json.errors && !json.message) {
+        return {
+          error: json.error,
+          origin: typeof json.origin === "string" ? json.origin : "",
+          domain: typeof json.host === "string" ? json.host : "",
+          allowed: Array.isArray(json.allowed) ? json.allowed.join(", ") : "",
+        };
+      }
+    } catch (e) {}
+    return null;
   }
 
   function requestJson(url, token, relayBase) {
