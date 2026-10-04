@@ -181,41 +181,130 @@ body {
   color: var(--ink);
 }
 
-/* Look-ahead day chips: Today, then the next few days. */
-.day-bar {
+/* Day navigator at the top: < Monday >, one day per arrow press. */
+.day-nav {
   display: flex;
-  gap: 6px;
-  margin: 2px 0 10px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
-.day-bar:empty {
-  display: none;
-}
-
-.day-chip {
-  flex: 0 0 auto;
-  font: inherit;
-  font-size: 11.5px;
-  padding: 4px 9px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0 10px;
+  padding: 5px 8px;
   background: var(--card);
-  color: var(--muted);
-  cursor: pointer;
-  white-space: nowrap;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
 }
 
-.day-chip:hover {
-  border-color: var(--accent);
+.day-current {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.day-name {
+  font-size: 15px;
+  font-weight: 700;
   color: var(--ink);
 }
 
-.day-chip.is-active {
-  background: var(--accent);
+.day-date {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.day-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.day-arrow svg {
+  width: 16px;
+  height: 16px;
+}
+
+.day-arrow:hover {
   border-color: var(--accent);
-  color: var(--accent-ink);
+  color: var(--accent);
+}
+
+.day-arrow.is-disabled,
+.day-arrow[aria-disabled="true"] {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* One little card per labelled row of the teacher's calendar. */
+.fact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fact {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 7px 9px;
+}
+
+.fact-unlabelled {
+  border-left-color: var(--line);
+}
+
+.fact-label {
+  margin: 0 0 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.fact-value {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.fact-value + .fact-value {
+  margin-top: 3px;
+}
+
+/* Settings is just a gear; the word appears on hover/focus. */
+.gear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+}
+
+.gear-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.settings-label {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width 120ms ease, opacity 120ms ease;
+}
+
+.gear-btn:hover .settings-label,
+.gear-btn:focus-visible .settings-label {
+  max-width: 90px;
+  opacity: 1;
 }
 
 .settings input {
@@ -301,11 +390,4 @@ body {
   color: var(--muted);
 }
 
-.plan-list {
-  margin: 0;
-  padding-left: 16px;
-}
-
-.plan-list li {
-  margin: 2px 0;
-}
+/* Fact-card styles live above, next to the day navigator. */

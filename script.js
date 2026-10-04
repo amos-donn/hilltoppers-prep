@@ -24,7 +24,8 @@
 
   /* Look-ahead state: which day is being viewed (0 = today) and the calendar
      pages already fetched for the current classes. */
-  var LOOKAHEAD_DAYS = 4;
+  var MIN_OFFSET = -7;
+  var MAX_OFFSET = 14;
   var dayOffset = 0;
   var cards = [];
   var planCache = {};
@@ -53,7 +54,10 @@
     els.save = document.getElementById("save-settings");
     els.status = document.getElementById("settings-status");
     els.classes = document.getElementById("classes");
-    els.dayBar = document.getElementById("day-bar");
+    els.dayName = document.getElementById("day-name");
+    els.dayDate = document.getElementById("day-date");
+    els.dayPrev = document.getElementById("day-prev");
+    els.dayNext = document.getElementById("day-next");
     els.settings = document.getElementById("settings");
     els.toggle = document.getElementById("settings-toggle");
 
@@ -62,7 +66,17 @@
 
     els.save.addEventListener("click", onSave);
     els.toggle.addEventListener("click", onToggle);
-    if (els.dayBar) els.dayBar.addEventListener("click", onDayClick);
+    if (els.dayPrev) {
+      els.dayPrev.addEventListener("click", function () {
+        stepDay(-1);
+      });
+    }
+    if (els.dayNext) {
+      els.dayNext.addEventListener("click", function () {
+        stepDay(1);
+      });
+    }
+    renderDayNav();
 
     if (els.token.value.trim()) {
       refresh();
@@ -333,7 +347,6 @@
     planCache = {};
 
     if (!token) {
-      if (els.dayBar) els.dayBar.textContent = "";
       els.classes.appendChild(hint("Add your Canvas API token above to load the plan for each class."));
       return;
     }
@@ -404,36 +417,33 @@
     return WEEKDAY_NAMES[date.getDay()] + ", " + same;
   }
 
-  function renderDayBar() {
-    if (!els.dayBar) return;
-    els.dayBar.textContent = "";
-    var base = new Date();
-    base.setHours(0, 0, 0, 0);
-    for (var i = 0; i <= LOOKAHEAD_DAYS; i++) {
-      var d = new Date(base);
-      d.setDate(d.getDate() + i);
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "day-chip" + (i === dayOffset ? " is-active" : "");
-      btn.setAttribute("data-offset", String(i));
-      btn.setAttribute("aria-pressed", i === dayOffset ? "true" : "false");
-      btn.textContent = i === 0 ? "Today" : shortWeekday(d) + " " + shortKey(d);
-      els.dayBar.appendChild(btn);
+  /* The day navigator at the top of the popup: < Monday >, arrows stepping one
+     day at a time in either direction. */
+  function renderDayNav() {
+    var date = targetDate();
+    if (els.dayName) els.dayName.textContent = WEEKDAY_NAMES[date.getDay()];
+    if (els.dayDate) {
+      els.dayDate.textContent =
+        dayOffset === 0 ? "Today · " + shortKey(date) : shortKey(date);
     }
+    if (els.dayPrev) setNavDisabled(els.dayPrev, dayOffset <= MIN_OFFSET);
+    if (els.dayNext) setNavDisabled(els.dayNext, dayOffset >= MAX_OFFSET);
   }
 
-  function onDayClick(event) {
-    var target = event.target;
-    var btn = target && target.closest ? target.closest("[data-offset]") : null;
-    if (!btn) return;
-    var next = parseInt(btn.getAttribute("data-offset"), 10);
-    if (isNaN(next) || next === dayOffset) return;
+  function setNavDisabled(el, disabled) {
+    el.classList.toggle("is-disabled", disabled);
+    el.setAttribute("aria-disabled", disabled ? "true" : "false");
+  }
+
+  function stepDay(delta) {
+    var next = dayOffset + delta;
+    if (next < MIN_OFFSET || next > MAX_OFFSET) return;
     dayOffset = next;
     renderPlans();
   }
 
   function renderPlans() {
-    renderDayBar();
+    renderDayNav();
     var date = targetDate();
     cards.forEach(function (entry) {
       var cached = planCache[entry.course.id];
@@ -487,13 +497,9 @@
       });
   }
 
-  /* ---------- "Today" extraction from the spreadsheet ---------- */
+  /* ---------- Reading the spreadsheet on a class's homepage ---------- */
 
-  function todayKeys() {
-    return dateKeysFor(new Date());
-  }
-
-  /* Every spelling a spreadsheet might use for one specific date. */
+  /* Every spelling a spreadsheet might use for a specific date. */
   function dateKeysFor(now) {
     var monthsShort = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
     var monthsLong = [
@@ -619,23 +625,21 @@
   }
 
   /* Row mode: the day sits in the first cell, the plan in the rest of the row. */
-  function weekdayRowLines(rows, rowIndex) {
+  function weekdayRowFacts(rows, rowIndex) {
     var cells = Array.prototype.slice.call(rows[rowIndex].children);
-    var out = [];
+    var lines = [];
     cells.forEach(function (cell, idx) {
-      var text = cleanText(cell.textContent);
-      if (!text) return;
       if (idx === 0) {
+        var text = cleanText(cell.textContent);
         var rest = text.replace(/^[a-z]+\b\.?/i, "").replace(/^[\s\-–—:;,]+/, "").trim();
-        if (rest) out.push(rest);
+        if (rest) lines.push(rest);
         return;
       }
-      if (looksLikeDate(text)) return;
-      out.push(text);
+      cellLines(cell).forEach(function (line) {
+        if (!looksLikeDate(line) && lines.indexOf(line) === -1) lines.push(line);
+      });
     });
-    return out.filter(function (line, i) {
-      return out.indexOf(line) === i;
-    });
+    return rowFacts(lines);
   }
 
   /* The plan for one specific day (row-mode date, column-mode date, or a
@@ -655,17 +659,12 @@
     var sawWeekdayCalendar = false;
     var calendarDates = [];
     var targetWeekday = date.getDay();
-    var wantKey = shortKey(date);
 
     for (var t = 0; t < tables.length; t++) {
       var rows = Array.prototype.slice.call(tables[t].querySelectorAll("tr"));
       if (!rows.length) continue;
 
-      /* 1) An explicit date match — exact, so prefer it. */
-      var lines = matchTable(rows, patterns, keys);
-      if (lines.length) return { kind: "plan", lines: lines };
-
-      /* 2) A weekday header row: Monday..Friday across the top. */
+      /* 1) The days of the week are the first row — the standard shape. */
       var headerRow = headerWeekdayRow(rows);
       if (headerRow) {
         sawWeekdayCalendar = true;
@@ -680,14 +679,14 @@
         if (col != null) {
           var headCell = headCells[col];
           var cellDate = headCell ? firstDateKey(cleanText(headCell.textContent)) : "";
-          if (!cellDate || cellDate === wantKey) {
-            var colLines = columnLines(rows, col, headerRow.row + 1);
-            if (colLines.length) return { kind: "plan", lines: colLines, byWeekday: true };
+          var facts = columnFacts(rows, col, headerRow.row + 1);
+          if (facts.length) {
+            return { kind: "plan", facts: facts, byWeekday: true, headerDate: cellDate };
           }
         }
       }
 
-      /* 3) Weekday names down the first column. */
+      /* 2) The same grid rotated: day names down the first column. */
       var headerCol = headerWeekdayColumn(rows);
       if (headerCol) {
         sawWeekdayCalendar = true;
@@ -695,12 +694,16 @@
         if (rowIdx != null) {
           var firstCell = rows[rowIdx].children[headerCol.col];
           var rowDate = firstCell ? firstDateKey(cleanText(firstCell.textContent)) : "";
-          if (!rowDate || rowDate === wantKey) {
-            var rowLines = weekdayRowLines(rows, rowIdx);
-            if (rowLines.length) return { kind: "plan", lines: rowLines, byWeekday: true };
+          var rowFactList = weekdayRowFacts(rows, rowIdx);
+          if (rowFactList.length) {
+            return { kind: "plan", facts: rowFactList, byWeekday: true, headerDate: rowDate };
           }
         }
       }
+
+      /* 3) Fallback: an explicit date somewhere in the sheet. */
+      var dateFacts = matchTableFacts(rows, patterns, keys);
+      if (dateFacts.length) return { kind: "plan", facts: dateFacts };
     }
 
     /* A live Google Sheets/iframe embed is invisible to the Canvas API —
@@ -733,28 +736,60 @@
     return "";
   }
 
-  function columnLines(rows, col, fromRow) {
-    var lines = [];
+  /* ---------- Facts: the rows of the day's column ----------
+
+     Every labelled row (FOCUS, CLASSWORK, HOMEWORK, Resources, Materials...)
+     becomes one card: the row's left-hand cell is the card title, the day's
+     cell is the value, one line per line the teacher typed. */
+
+  function stripTags(html) {
+    return String(html || "").replace(/<[^>]*>/g, " ");
+  }
+
+  /* Lines inside one cell: sheets use <br> or one block per line. */
+  function cellLines(cell) {
+    if (!cell) return [];
+    var html = String(cell.innerHTML || "");
+    var parts = html
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+      .split("\n");
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var text = cleanText(stripTags(parts[i]));
+      if (text && out.indexOf(text) === -1) out.push(text);
+    }
+    if (!out.length) {
+      var flat = cleanText(cell.textContent);
+      if (flat) out.push(flat);
+    }
+    return out;
+  }
+
+  /* A cell holding nothing but a date is another day, not a fact. */
+  function isPureDate(text) {
+    return looksLikeDate(text) && text.replace(DATEISH, "").replace(/[\s\-–—:,+.]+/g, "") === "";
+  }
+
+  function columnFacts(rows, col, fromRow) {
+    var facts = [];
     var start = fromRow == null ? 1 : fromRow;
-    /* Prefix labels only when the first column is a real label column
-       (vertical day-lists). If the header row's first cell is a date, the
-       first column is another day — its cells are not labels. */
     var headerFirst =
       rows[0] && rows[0].children[0] ? cleanText(rows[0].children[0].textContent) : "";
     var labelIsDate = looksLikeDate(headerFirst);
     for (var i = start; i < rows.length; i++) {
       var rowCells = Array.prototype.slice.call(rows[i].children);
-      var value = rowCells[col] ? cleanText(rowCells[col].textContent) : "";
-      if (!value || looksLikeDate(value)) continue;
+      var lines = cellLines(rowCells[col]);
+      if (!lines.length) continue;
+      if (lines.length === 1 && isPureDate(lines[0])) continue;
       var label = rowCells[0] ? cleanText(rowCells[0].textContent) : "";
-      lines.push(
-        label && col !== 0 && !looksLikeDate(label) && !labelIsDate ? label + ": " + value : value
-      );
+      if (col === 0 || looksLikeDate(label) || labelIsDate) label = "";
+      facts.push({ label: label, lines: lines });
     }
-    return lines;
+    return facts;
   }
 
-  function matchTable(rows, patterns, keys) {
+  function matchTableFacts(rows, patterns, keys) {
     if (!rows.length) return [];
 
     var hit = null;
@@ -801,7 +836,7 @@
 
     // Candidate 2 — column mode: the date sits in the top row, plan items
     // stack below it (dates across the top, or a single-column day list).
-    var colLines = hit.row === 0 && rows.length > 1 ? columnLines(rows, hit.col) : [];
+    var colFacts = hit.row === 0 && rows.length > 1 ? columnFacts(rows, hit.col) : [];
 
     // Prefer column mode when the top row is a date header: several dates
     // across it, or a pure date outside the first column.
@@ -813,18 +848,27 @@
       rows.length > 1 &&
       (dateLikeInHeader >= 2 || (hit.col !== 0 && stripDate(matchedText, keys) === ""));
 
-    var lines = topRowIsDateHeader
-      ? colLines.length
-        ? colLines
-        : rowLines
+    var facts = topRowIsDateHeader
+      ? colFacts.length
+        ? colFacts
+        : rowFacts(rowLines)
       : rowLines.length
-        ? rowLines
-        : colLines;
+        ? rowFacts(rowLines)
+        : colFacts;
 
     // De-duplicate while preserving order.
-    return lines.filter(function (line, i) {
-      return lines.indexOf(line) === i;
+    return facts.filter(function (fact, i) {
+      return (
+        facts.findIndex(function (other) {
+          return other.label === fact.label && other.lines.join("\n") === fact.lines.join("\n");
+        }) === i
+      );
     });
+  }
+
+  /* Row-mode values have no label cell to borrow a title from. */
+  function rowFacts(lines) {
+    return lines.length ? [{ label: "", lines: lines }] : [];
   }
 
   /* ---------- Rendering ---------- */
@@ -890,16 +934,33 @@
 
     var note = document.createElement("p");
     note.className = "page-note";
-    note.textContent = dayLabelFor(day) + (plan.sourceTitle ? " · " + plan.sourceTitle : "");
-    body.appendChild(note);
+    note.textContent = [plan.headerDate ? "sheet: " + plan.headerDate : "", plan.sourceTitle || ""]
+      .filter(Boolean)
+      .join(" · ");
+    if (note.textContent) body.appendChild(note);
 
-    var ul = document.createElement("ul");
-    ul.className = "plan-list";
-    plan.lines.forEach(function (line) {
-      var li = document.createElement("li");
-      li.textContent = line;
-      ul.appendChild(li);
+    /* One little card per labelled row the teacher used. */
+    var list = document.createElement("div");
+    list.className = "fact-list";
+    (plan.facts || []).forEach(function (fact) {
+      var card = document.createElement("article");
+      card.className = "fact";
+      if (fact.label) {
+        var label = document.createElement("h3");
+        label.className = "fact-label";
+        label.textContent = fact.label;
+        card.appendChild(label);
+      } else {
+        card.classList.add("fact-unlabelled");
+      }
+      fact.lines.forEach(function (line) {
+        var value = document.createElement("p");
+        value.className = "fact-value";
+        value.textContent = line;
+        card.appendChild(value);
+      });
+      list.appendChild(card);
     });
-    body.appendChild(ul);
+    body.appendChild(list);
   }
 })();
