@@ -130,6 +130,14 @@ const planHtml =
     "cell padding never renders as plan text"
   );
   assert(bodyText(window).includes("Weekly Plan"), "source page note shown");
+  assert(
+    !/Loading classes/.test(statusEl(window)),
+    "the settings line stops saying 'Loading classes…' once the classes are on screen"
+  );
+  assert(
+    statusEl(window).includes("Loaded 1 class."),
+    "the settings line reports what it loaded (got " + JSON.stringify(statusEl(window)) + ")"
+  );
   assert(calls.length > 0, "requests were made");
   assert(
     calls.every((c) => c.url.startsWith(RELAY)),
@@ -297,6 +305,24 @@ const planHtml =
   assert(!text.includes("[err-7]"), "no err-7 error card for a disabled plan page");
   assert(!/wrong API path/i.test(text), "no 'wrong API path' text for a disabled plan page");
   assert(!/has been disabled/i.test(text), "the disabled-page message is never rendered");
+}
+
+/* ---------- 9) an account with no active classes ---------- */
+/* "Loading classes…" used to be written before the request and never replaced,
+   so the settings panel kept claiming to load classes that were already there.
+   An empty result has to say so too. */
+{
+  const { window } = await boot(async () => new Response("[]", { status: 200 }));
+  await settle(window, "No active classes found");
+
+  assert(
+    !/Loading classes/.test(statusEl(window)),
+    "an account with no classes does not keep saying 'Loading classes…'"
+  );
+  assert(
+    statusEl(window).includes("No active classes found."),
+    "the settings line reports the empty result (got " + JSON.stringify(statusEl(window)) + ")"
+  );
 }
 
 console.log(

@@ -114,6 +114,14 @@
     els.status.classList.toggle("is-error", Boolean(isError));
   }
 
+  /* What the settings line reports once a load finishes. "Loading classes…" is
+     written before the request goes out, so something has to replace it —
+     otherwise the panel claims to be loading classes that are already on
+     screen. */
+  function loadedStatusText(count) {
+    return "Loaded " + count + (count === 1 ? " class." : " classes.");
+  }
+
   function normalizeBase(url) {
     var v = (url || "").trim().replace(/\/+$/, "");
     if (!v) return "";
@@ -358,8 +366,12 @@
         if (!Array.isArray(courses) || courses.length === 0) {
           els.classes.appendChild(hint("No active classes found on this Canvas account."));
           els.latestDiag = null;
+          setStatus("No active classes found.", false);
           return;
         }
+        /* The load is over the moment this list arrives — report it instead of
+           leaving the line stuck on "Loading classes…". */
+        setStatus(loadedStatusText(courses.length), false);
         renderCourseCards(courses);
       })
       .catch(function (err) {
