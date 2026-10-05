@@ -1,4 +1,8 @@
-/* Hilltoppers Prep topping — designed for a ~318px-wide extension iframe. */
+/* Hilltoppers Prep topping — fluid by design.
+
+   The extension's Topping card leaves roughly a 318px iframe at its narrowest,
+   but the host picks the width, so nothing here assumes a number: the page
+   fills whatever frame it is given and wraps rather than overflowing. */
 
 :root {
   --paper: #f4f7f2;
@@ -22,6 +26,9 @@ html,
 body {
   margin: 0;
   padding: 0;
+  /* Fit-content height mode measures the wrapper, so the document must be
+     allowed to end at its natural height -- never pinned to the viewport. */
+  min-height: 0;
   background: var(--paper);
   color: var(--ink);
 }
@@ -33,13 +40,30 @@ body {
   overflow-x: hidden;
 }
 
+/* The natural-height wrapper resize.js measures and reports to the extension.
+   width:100% + min-width:0 keep it exactly as wide as the frame it is given;
+   display:flow-root contains child margins so the reported height is the real
+   painted height. Do NOT give it height:100vh, min-height:100% or any fixed
+   scrolling height -- that pins the frame at its tallest point. */
 [data-topping-content] {
+  display: flow-root;
+  width: 100%;
+  min-width: 0;
   padding: 10px 12px 14px;
   overflow-wrap: anywhere;
   word-break: break-word;
-  /* Popup iframe is ~318px wide: never let content push it wider. */
+  /* Never let content push the frame wider than it is. */
   max-width: 100%;
   overflow-x: hidden;
+}
+
+/* Media and form controls stay inside their container at any width. */
+img,
+video,
+input,
+textarea,
+select {
+  max-width: 100%;
 }
 
 /* Header */
@@ -311,6 +335,9 @@ body {
 .settings-actions {
   display: flex;
   align-items: center;
+  /* Narrow frame: the status line drops below the button instead of forcing
+     a horizontal scrollbar. */
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 9px;
 }

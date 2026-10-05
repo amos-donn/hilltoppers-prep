@@ -45,14 +45,7 @@ const CASES = [
     expect: ["Quiz ch. 5"],
     reject: ["Reading", "10/3 - Quiz"],
   },
-  {
-    name: "weekRows (horizontal weekly rows, date + plans in one row)",
-    html:
-      "<table><tr><th>Week of 9/28</th><th>Mon</th><th>Tue</th><th>Wed</th></tr>" +
-      "<tr><td>10/3</td><td>Reading</td><td>Quiz ch. 5</td><td>Lab report</td></tr></table>",
-    expect: ["Quiz ch. 5", "Lab report"],
-    reject: ["Reading:"],
-  },
+  
   {
     name: "dayList (month-name dates)",
     html:
@@ -137,6 +130,23 @@ const todayIndex = (new Date().getDay() + 6) % 7; // 0 = Monday
 const cols = (fn) => [0, 1, 2, 3, 4, 5, 6].map((i) => "<td>" + fn(i) + "</td>").join("");
 const heads = (fn) => [0, 1, 2, 3, 4, 5, 6].map((i) => "<th>" + fn(i) + "</th>").join("");
 
+/* A weekly grid whose header carries a "week of" corner cell, with one data row
+   that repeats the date in its first cell and then lists each day's plan.
+   Generated from the real current week: the weekday columns have to be the
+   actual days or nothing lines up with today and the whole row reads as another
+   day's plan. */
+CASES.push({
+  name: "weekRows (horizontal weekly rows, date + plans in one row)",
+  html:
+    "<table><tr><th>Week of " + (weekStart.getMonth() + 1) + "/" + weekStart.getDate() + "</th>" +
+    heads(withDate) +
+    "</tr><tr><td>" + (dayAt(todayIndex).getMonth() + 1) + "/" + dayAt(todayIndex).getDate() + "</td>" +
+    cols((i) => (i === todayIndex ? "Quiz ch. 5<br>Lab report" : "Reading: ch. " + (i + 1))) +
+    "</tr></table>",
+  expect: ["Quiz ch. 5", "Lab report"],
+  reject: ["Reading:"],
+});
+
 CASES.push({
   name: "weekdayHeaderWithDates (Week 6 / Monday 9/28 / Tuesday 9/29 columns)",
   html:
@@ -220,7 +230,16 @@ for (const c of CASES) {
   window.localStorage.setItem("hiltoppers.canvasProxyUrl", "https://proxy.example");
   window.eval(SCRIPT);
 
-  for (let i = 0; i < 100 && !window.document.querySelector(".class-body .state, .fact-list"); i++) {
+  /* Wait for a settled render, not just for the first state element: the page
+     paints a "Loading classes…" state first and only fills the plan in on a
+     later round trip, so stopping at that first element reads a half-drawn
+     card and reports missing entries that do arrive. */
+  const settled = () => {
+    const body = window.document.body;
+    const drawn = body.querySelector(".class-body .state, .fact-list");
+    return drawn && !/Loading classes/.test(body.textContent);
+  };
+  for (let i = 0; i < 200 && !settled(); i++) {
     await new Promise((r) => setTimeout(r, 10));
   }
 

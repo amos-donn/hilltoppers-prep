@@ -12,7 +12,9 @@
          width/height attributes, because an unsized <svg viewBox> renders at its
          300x150 default and looks enormous in a 318px iframe. -->
     <style>
-      * {
+      *,
+      *::before,
+      *::after {
         box-sizing: border-box;
       }
 
@@ -20,7 +22,19 @@
       body {
         width: 100%;
         margin: 0;
+        /* "Fit content" measures the wrapper; html/body must be free to be
+           shorter than the frame, so nothing here may pin a viewport height. */
+        min-height: 0;
         overflow-x: hidden;
+      }
+
+      /* Never let media or form controls push the frame wider than it is. */
+      img,
+      video,
+      input,
+      textarea,
+      select {
+        max-width: 100%;
       }
 
       body {
@@ -29,9 +43,15 @@
         font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       }
 
+      /* The natural-height wrapper the extension measures. width:100% +
+       * min-width:0 keeps it fluid; display:flow-root stops child margins
+       * collapsing through it, which would mis-report the height. */
       [data-topping-content] {
+        width: 100%;
         max-width: 100%;
         min-width: 0;
+        display: flow-root;
+        overflow-wrap: anywhere;
         overflow-x: hidden;
       }
 
@@ -126,7 +146,7 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div data-topping-content id="topping-content">
+    <main data-topping-content id="topping-content">
       <header class="top-header">
         <nav id="day-nav" class="day-nav" aria-label="Change the day shown">
           <button id="day-prev" class="day-arrow" type="button" aria-label="Previous day">
@@ -187,10 +207,10 @@
         </div>
       </section>
 
-      <main id="classes" class="classes">
+      <div id="classes" class="classes">
         <p class="hint">Add your Canvas API token in Settings (the gear) to load the plan for each class.</p>
-      </main>
-    </div>
+      </div>
+    </main>
 
     <script src="script.js" defer></script>
     <script src="resize.js" defer></script>
