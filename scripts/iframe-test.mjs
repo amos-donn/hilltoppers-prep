@@ -87,9 +87,27 @@ for (const el of [...document.querySelectorAll("script[src], link[href]")]) {
   assert(!/^https?:\/\//i.test(url), "asset is referenced relatively: " + url);
 }
 
-/* --- 6) the fit-content height contract --- */
-assert(/hiltoppers:topping-resize/.test(RESIZE), "resize.js posts the hiltoppers:topping-resize message");
+/* --- 6) the fit-content height contract ---
+   The protocol itself is covered by scripts/resize-test.mjs; these are the
+   two structural facts this file already owns: the reporter is the official
+   channel/session one, and it is deferred so the wrapper exists when it runs. */
+assert(/channel:\s*['"]hilltoppers-topping-v1['"]/.test(RESIZE), "resize.js speaks the extension's topping channel");
 assert(/data-topping-content/.test(RESIZE), "resize.js measures [data-topping-content]");
+assert(/host\s*=\s*params\.get\(['"]host['"]\)/.test(RESIZE), "resize.js reads the host origin off the iframe URL");
+assert(!/postMessage\([^)]*['"]\*['"]/.test(RESIZE), "resize.js never broadcasts to \"*\"");
+assert(
+  /<script src="resize\.js" defer><\/script>/.test(flat(HTML)),
+  "index.html loads resize.js deferred"
+);
+assert(
+  HTML.indexOf("data-topping-content") < HTML.indexOf('src="resize.js"'),
+  "the measured wrapper is in the document before the reporter runs"
+);
+assert(
+  /\[data-topping-content\][^{]*\{[^}]*display:\s*flow-root/.test(crit),
+  "the critical block gives the measured wrapper flow-root"
+);
+assert(!/100vh|min-height:\s*100%/.test(flat(HTML)), "nothing pins the page to a viewport height");
 
 console.log(
   results.every((r) => r.ok)

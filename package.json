@@ -8,7 +8,7 @@
     "start": "node scripts/serve.mjs",
     "dev": "node scripts/serve.mjs",
     "build": "node scripts/build.mjs",
-    "test": "node --check script.js && node --check worker/index.mjs && node --test scripts/worker-test.mjs && bun scripts/e2e-test.mjs && bun scripts/layout-test.mjs && bun scripts/daynav-test.mjs && bun scripts/iframe-test.mjs && bun scripts/topbar-test.mjs"
+    "test": "node --check script.js && node --check resize.js && node --check worker/index.mjs && node --test scripts/worker-test.mjs && bun scripts/e2e-test.mjs && bun scripts/layout-test.mjs && bun scripts/daynav-test.mjs && bun scripts/iframe-test.mjs && bun scripts/topbar-test.mjs && node scripts/resize-test.mjs"
   },
   "devDependencies": {
     "jsdom": "^30.1.1"
