@@ -197,7 +197,28 @@ CASES.push({
   reject: ["Other focus", "Other work", "Other homework"],
 });
 
+/* Non-breaking spaces are how these spreadsheets pad cells. A cell that holds
+   only &nbsp; is empty, not a plan, so its row must vanish entirely; one that
+   mixes the padding in must still read as its real text. The tag-strip leaves
+   the reference as literal "&nbsp;", so it used to render as plan content. */
+CASES.push({
+  name: "nbspPadding (non-breaking spaces used as cell padding)",
+  html:
+    "<table><tr><th>Week 6</th>" +
+    heads(withDate) +
+    "</tr><tr><td>FOCUS</td>" +
+    cols((i) => (i === todayIndex ? "&nbsp;" : "Other focus")) +
+    "</tr><tr><td>CLASSWORK</td>" +
+    cols((i) => (i === todayIndex ? "&nbsp;Read <b>ch. 3</b>&nbsp;" : "Other work")) +
+    "</tr><tr><td>HOMEWORK</td>" +
+    cols((i) => (i === todayIndex ? "&#xa0;HW&nbsp;2.10&#160;" : "Other HW")) +
+    "</tr></table>",
+  expect: ["CLASSWORK", "Read ch. 3", "HOMEWORK", "HW 2.10"],
+  reject: ["&nbsp;", "&#160;", "&#xa0;", "\u00a0", "FOCUS", "Other focus", "Other work", "Other HW"],
+});
+
 let failures = 0;
+const rendered = [];
 
 for (const c of CASES) {
   const window = new JSDOM(`<!doctype html><html><body>
@@ -244,6 +265,7 @@ for (const c of CASES) {
   }
 
   const text = window.document.body.textContent;
+  rendered.push({ name: c.name, text });
   for (const want of c.expect) {
     if (!text.includes(want)) {
       failures++;
@@ -257,6 +279,17 @@ for (const c of CASES) {
     }
   }
   console.log(`ok [${c.name}]`);
+}
+
+/* Belt and braces: whatever the layout, no character reference may reach the
+   plan. This is the bug the user reported — "&nbsp;" shown as plan content —
+   so it is checked across every fixture, not just the padding ones. */
+const NBSP_LEFTOVERS = /&nbsp;?|&NonBreakingSpace;?|&#0*160;?|&#x0*a0;?|\u00a0/i;
+for (const { name, text } of rendered) {
+  if (NBSP_LEFTOVERS.test(text)) {
+    failures++;
+    console.log(`FAIL [${name}] rendered a non-breaking space as plan text\n  got: ${JSON.stringify(text.slice(0, 200))}`);
+  }
 }
 
 console.log(failures === 0 ? `LAYOUT OK — ${CASES.length}/${CASES.length} layouts pass` : `LAYOUT FAILED — ${failures} assertion(s)`);
