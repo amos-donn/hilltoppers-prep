@@ -78,6 +78,10 @@ function targetOf(urlStr) {
   return decodeURIComponent(urlStr.split("url=")[1] || "");
 }
 
+/* A spreadsheet cell padded with non-breaking spaces must never surface as
+   plan text ("&nbsp;" was showing up as a plan line). */
+const NBSP_LEFTOVER = /&nbsp;?|&NonBreakingSpace;?|&#0*160;?|&#x0*a0;?|\u00a0/i;
+
 const statusEl = (w) => w.document.getElementById("settings-status").textContent;
 const bodyText = (w) => w.document.body.textContent;
 
@@ -94,7 +98,7 @@ const label = (d) => WEEKDAYS[d.getDay()] + " " + (d.getMonth() + 1) + "/" + d.g
 const planHtml =
   "<table><tr><th>" + label(dayShift(-1)) + "</th><th>" + label(dayShift(0)) +
   "</th><th>" + label(dayShift(2)) + "</th></tr>" +
-  "<tr><td>Reading</td><td>Quiz ch. 5</td><td>Homework 12</td></tr></table>";
+  "<tr><td>Reading</td><td>&nbsp;Quiz ch. 5&nbsp;</td><td>Homework 12</td></tr></table>";
 
 {
   const { window, calls } = await boot(async (urlStr) => {
@@ -112,6 +116,10 @@ const planHtml =
   assert(window.document.querySelectorAll(".class-card").length === 1, "one class card rendered");
   assert(bodyText(window).includes("Algebra I"), "course name shown");
   assert(bodyText(window).includes("Quiz ch. 5"), "today's plan line rendered");
+  assert(
+    !NBSP_LEFTOVER.test(bodyText(window)),
+    "cell padding never renders as plan text"
+  );
   assert(bodyText(window).includes("Weekly Plan"), "source page note shown");
   assert(calls.length > 0, "requests were made");
   assert(

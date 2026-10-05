@@ -536,9 +536,22 @@
     return false;
   }
 
-  /* Display form: collapse whitespace, keep original casing. */
+  /* Teachers pad spreadsheet cells with non-breaking spaces, so a cell can
+     hold nothing else. The page arrives as HTML and the tag-strip in cellLines
+     leaves character references behind as literal text ("&nbsp;"), which is
+     not whitespace — it survived every emptiness check and rendered as plan.
+     Decode each spelling to a plain space first, so the whitespace collapse
+     and trim below drop it: a lone &nbsp; yields an empty line (dropped), and
+     one mixed in with real text just spaces it out. */
+  var NBSP_SPELLINGS = /&nbsp;?|&NonBreakingSpace;?|&#0*160;?|&#x0*a0;?|\u00a0/gi;
+
+  function decodeNbsp(text) {
+    return String(text == null ? "" : text).replace(NBSP_SPELLINGS, " ");
+  }
+
+  /* Display form: decode the padding, collapse whitespace, keep original casing. */
   function cleanText(text) {
-    return (text || "").replace(/\s+/g, " ").trim();
+    return decodeNbsp(text).replace(/\s+/g, " ").trim();
   }
 
   /* Match form: display form, lowercased, trailing punctuation stripped. */
