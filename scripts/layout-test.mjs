@@ -276,13 +276,18 @@ for (const c of CASES) {
   window.eval(SCRIPT);
 
   /* Wait for a settled render, not just for the first state element: the page
-     paints a "Loading classes…" state first and only fills the plan in on a
-     later round trip, so stopping at that first element reads a half-drawn
-     card and reports missing entries that do arrive. */
+     paints a "Loading classes…" line and a per-card "Loading…" first, and only
+     fills the plan in on later round trips (a disabled class is removed only
+     once its own request fails), so stopping at that first element reads a
+     half-drawn card and reports entries that do arrive. */
   const settled = () => {
     const body = window.document.body;
-    const drawn = body.querySelector(".class-body .state, .fact-list");
-    return drawn && !/Loading classes/.test(body.textContent);
+    if (/Loading classes/.test(body.textContent)) return false;
+    const states = [...body.querySelectorAll(".class-body .state")];
+    if (states.some((el) => /^Loading/.test(el.textContent.trim()))) return false;
+    return Boolean(
+      body.querySelector(".fact-list, .class-body .state.is-error, .class-body .state.is-empty, .hint")
+    );
   };
   for (let i = 0; i < 200 && !settled(); i++) {
     await new Promise((r) => setTimeout(r, 10));
