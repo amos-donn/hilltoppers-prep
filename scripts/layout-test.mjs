@@ -217,6 +217,22 @@ CASES.push({
   reject: ["&nbsp;", "&#160;", "&#xa0;", "\u00a0", "FOCUS", "Other focus", "Other work", "Other HW"],
 });
 
+/* Canvas answers 404 "That page has been disabled for this course" when a
+   teacher turns a class's pages off. That class has no plan to show, so it must
+   not exist on the page at all — no error card, no empty card — while a class
+   that does have a plan still renders normally. */
+CASES.push({
+  name: "disabledPlanPage (Canvas disables one class's plan page with a 404)",
+  html:
+    "<table><tr><th>Day</th><th>Plan</th></tr>" +
+    "<tr><td>" + short(TODAY_D) + "</td><td>Quiz ch. 5</td></tr></table>",
+  courses: [{ id: 1, name: "Algebra I" }, { id: 2, name: "Chemistry" }],
+  disabled: [2],
+  cards: 1,
+  expect: ["Algebra I", "Quiz ch. 5"],
+  reject: ["Chemistry", "err-7", "disabled", "wrong API path"],
+});
+
 let failures = 0;
 const rendered = [];
 
@@ -238,11 +254,19 @@ for (const c of CASES) {
     const target = String(url).startsWith("https://stjacademy.instructure.com/")
       ? String(url)
       : decodeURIComponent(String(url).split("url=")[1] || "");
-    if (target.includes("/front_page")) {
+    if (target.includes("/front_page") || target.includes("/pages")) {
+      /* A class listed in `disabled` answers the way Canvas does when its plan
+         page has been turned off. */
+      if ((c.disabled || []).some((id) => target.includes("/courses/" + id + "/"))) {
+        return new Response(
+          JSON.stringify({ message: "That page has been disabled for this course" }),
+          { status: 404 }
+        );
+      }
       return new Response(JSON.stringify({ title: "Plan", body: c.html }), { status: 200 });
     }
     if (target.includes("/api/v1/courses")) {
-      return new Response(JSON.stringify([{ id: 1, name: "Class" }]), { status: 200 });
+      return new Response(JSON.stringify(c.courses || [{ id: 1, name: "Class" }]), { status: 200 });
     }
     return new Response("[]", { status: 200 });
   };
@@ -276,6 +300,13 @@ for (const c of CASES) {
     if (text.includes(no)) {
       failures++;
       console.log(`FAIL [${c.name}] must not contain: ${JSON.stringify(no)}\n  got: ${JSON.stringify(text.slice(0, 200))}`);
+    }
+  }
+  if (c.cards != null) {
+    const count = window.document.querySelectorAll(".class-card").length;
+    if (count !== c.cards) {
+      failures++;
+      console.log(`FAIL [${c.name}] expected ${c.cards} class card(s), got ${count}`);
     }
   }
   console.log(`ok [${c.name}]`);

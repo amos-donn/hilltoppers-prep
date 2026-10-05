@@ -74,6 +74,15 @@ async function settle(window, needle, ms = 2500) {
   }
 }
 
+/* Wait until `needle` is gone from the rendered page (or the timeout elapses). */
+async function settleGone(window, needle, ms = 2500) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (!window.document.body.textContent.includes(needle)) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
 function targetOf(urlStr) {
   return decodeURIComponent(urlStr.split("url=")[1] || "");
 }
@@ -248,6 +257,46 @@ const planHtml =
     !text.includes("<!DOCTYPE") && !text.includes("<h2>"),
     "raw HTML markup is stripped from the message"
   );
+}
+
+/* ---------- 8) a class whose plan page the teacher disabled ---------- */
+/* Canvas answers a disabled page with 404 "That page has been disabled for
+   this course". There is no plan to show, so that class must not appear at all
+   — it is not an error the student can act on, and not a class to show. */
+{
+  const { window } = await boot(async (urlStr) => {
+    const target = targetOf(urlStr);
+    /* Order matters: a course's paths also contain "/api/v1/courses". */
+    if (target.includes("/courses/202/")) {
+      return new Response(
+        JSON.stringify({ message: "That page has been disabled for this course" }),
+        { status: 404 }
+      );
+    }
+    if (target.includes("/front_page") || target.includes("/pages")) {
+      return new Response(JSON.stringify({ title: "Weekly Plan", body: planHtml }), { status: 200 });
+    }
+    if (target.includes("/api/v1/courses")) {
+      return new Response(
+        JSON.stringify([{ id: 101, name: "Algebra I" }, { id: 202, name: "Chemistry" }]),
+        { status: 200 }
+      );
+    }
+    return new Response("[]", { status: 200 });
+  });
+  await settle(window, "Quiz ch. 5");
+  await settleGone(window, "Chemistry");
+
+  const text = bodyText(window);
+  assert(text.includes("Quiz ch. 5"), "the class with a plan still shows its plan");
+  assert(!text.includes("Chemistry"), "the class with a disabled page never gets a card");
+  assert(
+    window.document.querySelectorAll(".class-card").length === 1,
+    "exactly one class card exists — only the class with a plan"
+  );
+  assert(!text.includes("[err-7]"), "no err-7 error card for a disabled plan page");
+  assert(!/wrong API path/i.test(text), "no 'wrong API path' text for a disabled plan page");
+  assert(!/has been disabled/i.test(text), "the disabled-page message is never rendered");
 }
 
 console.log(

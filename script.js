@@ -443,9 +443,35 @@
     renderPlans();
   }
 
+  /* Canvas answers 404 with "That page has been disabled for this course" when
+     a teacher turns a class's pages off. Nothing is broken and there is no
+     plan to show, so that class must not be drawn at all — not as an error
+     card, not as a loading card, not as an "no plan page found" card. */
+  function isDisabledPlanPage(err) {
+    if (!err || err.status !== 404) return false;
+    return /page has been disabled/i.test(
+      String(err.body || "") + " " + String(err.message || "")
+    );
+  }
+
   function renderPlans() {
     renderDayNav();
     var date = targetDate();
+    /* Drop those classes before drawing anything: the card is removed from the
+       page and from the list, so it never exists to begin with. */
+    var hidden = false;
+    cards = cards.filter(function (entry) {
+      var cached = planCache[entry.course.id];
+      if (!cached || !isDisabledPlanPage(cached.error)) return true;
+      if (entry.card.sec.parentNode) entry.card.sec.parentNode.removeChild(entry.card.sec);
+      delete planCache[entry.course.id];
+      hidden = true;
+      return false;
+    });
+    if (hidden && !cards.length) {
+      els.classes.appendChild(hint("No class plans to show."));
+      return;
+    }
     cards.forEach(function (entry) {
       var cached = planCache[entry.course.id];
       if (cached === undefined) {
